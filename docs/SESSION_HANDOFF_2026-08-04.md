@@ -11,7 +11,7 @@
 
 从一次 7 维度并行架构审查 Workflow 出发（6/7 维度成功，1 维度因 API 速率限制未完成），按优先级交付：客户数据外泄堵漏、双项目版本控制基线、版本号单一源、EUVD 目录列表/搜索（改进 1）、数据日期展示 + 按钮文案修正（改进 2a/Phase1）、CVE 匹配静默漏报修复、积极利用漏洞标注（CRA Art.3(42)）、403 fail-fast。
 
-**9 个 Web commit + 5 个 Mirror commit；Web 测试 40→65 项，Mirror 测试 17→36 项，全绿。**
+**12 个 Web commit + 5 个 Mirror commit；Web 测试 40→79 项，Mirror 测试 17→36 项，全绿。**
 
 ---
 
@@ -139,7 +139,7 @@ curl -fsS http://127.0.0.1:8090/api/health  # snapshot_sha256 一致
 - 复杂度：涉及 import 函数事务边界重构；可测；中风险
 
 ### 后续步骤（设计文档 D1-D4 + 审查剩余）
-- **第五步**：D1 客户模板绑定数据模型（Metadata sheet → product/version/build 身份；component_id/依赖图）；D2 worker queue（长任务独立 worker，幂等/取消/重试/进度）
+- **第五步** — ✅ 已完成（2026-08-04 续做，commit `da73ca5` D1 + `f51b5ef` D2，Web 测试 65→79）：D1 `01_Metadata_元数据` sheet → product 身份绑定（预填可改 + hardware_revision/release_date/sbom_version 证据）；D2 BackgroundTasks 增强（`uuid5` 幂等键 / `POST /cancel` + `/retry` / `_write_json(completed)` 先于 `register_snapshot` 的原子顺序修复 + startup reconcile 兜底 / 前端取消·重试按钮）。下方原设计描述保留。
 - **第六步**：改进 2 Phase2（Mirror ops 编排器 + Web 进度轮询 = 真正"一键更新"，不违反约束#3）；Phase3 独立 ops 容器
 - **第七步**：工作流安全门（awareness 覆盖防护 workflow_store.py:831；stale 重开按 customer 隔离 :474；audit hash chain）
 - **D3**：工程化发布（CI lint/unit/contract/E2E/dep scan/image scan；签名 SBOM+provenance；性能/故障注入测试）
