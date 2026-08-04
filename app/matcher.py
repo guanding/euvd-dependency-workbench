@@ -1640,6 +1640,36 @@ async def match_components(
                         "unmapped_identifiers": unmapped + missing_euvd,
                         **mapping_meta,
                     }
+                    # 兜底：精确分支未产生匹配（典型：CVE 未在本地映射且未提供命中的
+                    # EUVD ID）时回退产品候选搜索，避免静默漏报。设计约束#5
+                    # "未命中≠不存在"——CVE 未映射只是"本地映射表未覆盖该 CVE"，
+                    # 不等于该组件无漏洞。回退产生的候选标记"需复核"，不冒充精确匹配。
+                    if not matches:
+                        query_product, query_vendor = query_identity(component)
+                        items, fallback_meta = await client_wrapper.search(
+                            http_client,
+                            query_product,
+                            query_vendor,
+                        )
+                        for item in items:
+                            candidate = evaluate_item(component, item)
+                            if candidate and candidate["euvd_id"] not in seen:
+                                seen.add(candidate["euvd_id"])
+                                candidate.update(provenance_fields)
+                                matches.append(
+                                    apply_exploitation_evidence(
+                                        candidate,
+                                        item,
+                                        kev_index,
+                                        evidence_meta,
+                                    )
+                                )
+                        query_meta = {
+                            **fallback_meta,
+                            "query_mode": "identifier-exact-then-product-fallback",
+                            "unmapped_identifiers": unmapped + missing_euvd,
+                            **mapping_meta,
+                        }
                 else:
                     query_product, query_vendor = query_identity(component)
                     items, query_meta = await client_wrapper.search(
