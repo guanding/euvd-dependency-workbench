@@ -737,15 +737,22 @@ async def list_euvd_records(
     page_size: int = 50,
     sort: str = "euvd_id_desc",
     q: str = "",
+    actively_exploited_only: bool = False,
 ) -> dict[str, Any]:
-    """改进1：EUVD 目录列表 + 搜索（只读快照查询，绝不联网，绝不写快照）。"""
+    """改进1：EUVD 目录列表 + 搜索（只读快照查询，绝不联网，绝不写快照）。
+    actively_exploited_only=true 时只返回积极利用漏洞（KEV∪exploitedSince）。"""
     try:
         page = max(1, int(page))
         page_size = max(1, min(100, int(page_size)))
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail="page/page_size 必须为整数") from exc
     result = await asyncio.to_thread(
-        EuvdClient.list_euvd_records, page, page_size, sort, q
+        EuvdClient.list_euvd_records,
+        page,
+        page_size,
+        sort,
+        q,
+        bool(actively_exploited_only),
     )
     if result is None:
         raise HTTPException(status_code=503, detail="本地 EUVD 快照不可用或哈希失配")

@@ -495,6 +495,7 @@ class EuvdClient:
         page_size: int = 50,
         sort: str = "euvd_id_desc",
         q: str = "",
+        actively_exploited_only: bool = False,
     ) -> dict[str, Any] | None:
         """改进1：只读快照上的 EUVD 目录浏览（分页 + 搜索），不联网、不写快照。
 
@@ -503,6 +504,11 @@ class EuvdClient:
         ——updated_raw/published_raw 存的是 EUVD 原文字符串（如 "Sep 9, 2025,
         8:59:21 PM"），字典序≠日期序；PK 序（创建序）可靠且走索引。返回 None
         表示本地快照不可用或哈希失配（调用方应 503，不得静默降级）。
+
+        actively_exploited_only：只返回积极利用漏洞（CRA Art.3(42)），SQL 层按
+        KEV 子表过滤；每条 record 的 actively_exploited 字段在 Python 层取
+        KEV∪record.exploitedSince（与 apply_exploitation_evidence 一致）。注意
+        设计约束#5：未命中 KEV ≠ "未被利用"，只表示"当前快照未列入"。
         """
         if not cls._local_validation().get("ok"):
             return None
@@ -515,27 +521,39 @@ class EuvdClient:
         with closing(cls._local_connect()) as connection:
             euvd_ids: list[str] = []
             total = 0
+            kev_subquery = (
+                "euvd_id IN (SELECT euvd_id FROM known_exploited)"
+                if actively_exploited_only
+                else ""
+            )
             if q.upper().startswith("CVE"):
                 pattern = f"{q}%"  # LIKE 大小写不敏感
+                kev_cond = f"AND {kev_subquery}" if kev_subquery else ""
                 total = int(
                     connection.execute(
-                        "SELECT COUNT(DISTINCT euvd_id) FROM cve_euvd_mapping "
-                        "WHERE cve_id LIKE ?",
+                        f"SELECT COUNT(DISTINCT euvd_id) FROM cve_euvd_mapping "
+                        f"WHERE cve_id LIKE ? {kev_cond}",
                         (pattern,),
                     ).fetchone()[0]
                 )
                 rows = connection.execute(
-                    "SELECT DISTINCT euvd_id FROM cve_euvd_mapping "
-                    "WHERE cve_id LIKE ? ORDER BY euvd_id DESC LIMIT ? OFFSET ?",
+                    f"SELECT DISTINCT euvd_id FROM cve_euvd_mapping "
+                    f"WHERE cve_id LIKE ? {kev_cond} ORDER BY euvd_id DESC "
+                    f"LIMIT ? OFFSET ?",
                     (pattern, page_size, offset),
                 ).fetchall()
                 euvd_ids = [str(r["euvd_id"]) for r in rows]
             else:
+                conditions: list[str] = []
+                params_total: list[Any] = []
+                params_list: list[Any] = []
                 if q:
-                    where, params_total = "WHERE euvd_id LIKE ?", (f"{q}%",)
-                    params_list = (f"{q}%", page_size, offset)
-                else:
-                    where, params_total, params_list = "", (), (page_size, offset)
+                    conditions.append("euvd_id LIKE ?")
+                    params_total.append(f"{q}%")
+                    params_list.append(f"{q}%")
+                if kev_subquery:
+                    conditions.append(kev_subquery)
+                where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
                 total = int(
                     connection.execute(
                         f"SELECT COUNT(*) FROM vulnerabilities {where}", params_total
@@ -544,7 +562,7 @@ class EuvdClient:
                 rows = connection.execute(
                     f"SELECT euvd_id FROM vulnerabilities {where} ORDER BY {order} "
                     f"LIMIT ? OFFSET ?",
-                    params_list,
+                    [*params_list, page_size, offset],
                 ).fetchall()
                 euvd_ids = [str(r["euvd_id"]) for r in rows]
 
@@ -577,6 +595,15 @@ class EuvdClient:
             cve_map: dict[str, list[str]] = {}
             for r in cve_rows:
                 cve_map.setdefault(str(r["euvd_id"]), []).append(str(r["cve_id"]))
+
+            source_rows = connection.execute(
+                f"SELECT DISTINCT euvd_id, source FROM known_exploited_sources "
+                f"WHERE euvd_id IN ({placeholders})",
+                euvd_ids,
+            ).fetchall()
+            source_map: dict[str, list[str]] = {}
+            for r in source_rows:
+                source_map.setdefault(str(r["euvd_id"]), []).append(str(r["source"]))
 
         records: list[dict[str, Any]] = []
         for eid in euvd_ids:
@@ -618,6 +645,8 @@ class EuvdClient:
             else:
                 severity = "低"
             cves = cve_map.get(eid, [])
+            exploited_since = str(payload.get("exploitedSince") or "")
+            is_kev = eid in kev_set
             records.append(
                 {
                     "euvd_id": eid,
@@ -628,7 +657,10 @@ class EuvdClient:
                     "date_published": str(payload.get("datePublished") or ""),
                     "date_updated": str(payload.get("dateUpdated") or ""),
                     "products": products,
-                    "kev": eid in kev_set,
+                    "kev": is_kev,
+                    "actively_exploited": is_kev or bool(exploited_since),
+                    "exploited_since": exploited_since,
+                    "kev_sources": source_map.get(eid, []),
                     "description_preview": str(payload.get("description") or "")[:200],
                 }
             )
@@ -640,6 +672,7 @@ class EuvdClient:
             "page_size": page_size,
             "sort": sort,
             "query": q,
+            "actively_exploited_only": actively_exploited_only,
         }
 
     @classmethod

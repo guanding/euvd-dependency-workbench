@@ -15,7 +15,7 @@ const state = {
   art14Cases: [],
   reviewers: [],
   snapshots: [],
-  euvdCatalog: { records: [], total: 0, page: 1, page_size: 50, sort: "euvd_id_desc", q: "", loaded: false },
+  euvdCatalog: { records: [], total: 0, page: 1, page_size: 50, sort: "euvd_id_desc", q: "", actively_exploited_only: false, loaded: false },
   currentCase: null,
   projectDetailSearch: "",
   pollTimer: null,
@@ -89,6 +89,7 @@ const elements = {
   euvdCatalogNext: document.getElementById("euvdCatalogNext"),
   euvdCatalogPageInfo: document.getElementById("euvdCatalogPageInfo"),
   euvdCatalogFreshness: document.getElementById("euvdCatalogFreshness"),
+  euvdCatalogActivelyExploited: document.getElementById("euvdCatalogActivelyExploited"),
   art14ListMeta: document.getElementById("art14ListMeta"),
   art14CasesBody: document.getElementById("art14CasesBody"),
   art14CaseDetail: document.getElementById("art14CaseDetail"),
@@ -1019,6 +1020,7 @@ async function loadEuvdCatalog(force = false) {
       sort: cat.sort,
     });
     if (cat.q) params.set("q", cat.q);
+    if (cat.actively_exploited_only) params.set("actively_exploited_only", "true");
     const result = await api(`/api/euvd/records?${params}`);
     state.euvdCatalog.records = result.records || [];
     state.euvdCatalog.total = result.total || 0;
@@ -1047,14 +1049,29 @@ function renderEuvdCatalog(freshness) {
             })
             .filter(Boolean)
             .join("<br>") || '<span class="muted">—</span>';
+        const exploited = row.actively_exploited
+          ? `<span class="status-badge danger">积极利用</span>${
+              row.exploited_since
+                ? `<div class="cell-sub">自 ${escapeHtml(formatDate(row.exploited_since))}</div>`
+                : ""
+            }${
+              row.kev_sources && row.kev_sources.length
+                ? `<div class="cell-sub">${escapeHtml(
+                    row.kev_sources
+                      .map((s) => (s === "cisa_kev" ? "CISA KEV" : s === "eukev_kev" ? "EU KEV" : s))
+                      .join(" · "),
+                  )}</div>`
+                : ""
+            }`
+          : '<span class="muted">—</span>';
         return `
-          <tr>
+          <tr class="${row.actively_exploited ? "row-actively-exploited" : ""}">
             <td><a class="euvd-link" href="https://euvd.enisa.europa.eu/vulnerability/${encodeURIComponent(row.euvd_id)}" target="_blank" rel="noreferrer">${escapeHtml(row.euvd_id)}</a></td>
             <td>${row.cve_id ? escapeHtml(row.cve_id) : '<span class="muted">—</span>'}</td>
             <td><span class="status-badge ${sevTone}">${escapeHtml(row.severity)}</span></td>
             <td>${row.base_score != null ? escapeHtml(String(row.base_score)) : '<span class="muted">—</span>'}</td>
             <td>${products}</td>
-            <td>${row.kev ? '<span class="status-badge danger">KEV</span>' : '<span class="muted">—</span>'}</td>
+            <td>${exploited}</td>
             <td>${escapeHtml(formatDate(row.date_published))}</td>
             <td>${escapeHtml(formatDate(row.date_updated))}</td>
           </tr>`;
@@ -1563,6 +1580,12 @@ elements.refreshFeedsButton.addEventListener("click", refreshFeeds);
 elements.euvdCatalogSearch.addEventListener("input", onEuvdCatalogSearchInput);
 elements.euvdCatalogSort.addEventListener("change", () => {
   state.euvdCatalog.sort = elements.euvdCatalogSort.value;
+  state.euvdCatalog.page = 1;
+  state.euvdCatalog.loaded = false;
+  loadEuvdCatalog(true);
+});
+elements.euvdCatalogActivelyExploited.addEventListener("change", () => {
+  state.euvdCatalog.actively_exploited_only = elements.euvdCatalogActivelyExploited.checked;
   state.euvdCatalog.page = 1;
   state.euvdCatalog.loaded = false;
   loadEuvdCatalog(true);

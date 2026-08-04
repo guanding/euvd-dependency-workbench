@@ -309,6 +309,23 @@ select:focus-visible {
   color: #f06b73;
 }
 
+.euvd-catalog-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #d7e0eb;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.row-actively-exploited {
+  background: rgba(240, 107, 115, 0.12);
+}
+.row-actively-exploited:hover {
+  background: rgba(240, 107, 115, 0.2);
+}
+
 .status-dot {
   width: 8px;
   height: 8px;
