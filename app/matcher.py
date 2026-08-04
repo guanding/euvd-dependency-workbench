@@ -489,6 +489,160 @@ class EuvdClient:
         }
 
     @classmethod
+    def list_euvd_records(
+        cls,
+        page: int = 1,
+        page_size: int = 50,
+        sort: str = "euvd_id_desc",
+        q: str = "",
+    ) -> dict[str, Any] | None:
+        """改进1：只读快照上的 EUVD 目录浏览（分页 + 搜索），不联网、不写快照。
+
+        搜索 q：CVE 前缀（CVE-2024-）走 cve_euvd_mapping PK；否则按 EUVD ID 前缀
+        走 vulnerabilities PK（SQLite LIKE 大小写不敏感）。默认排序 euvd_id_desc
+        ——updated_raw/published_raw 存的是 EUVD 原文字符串（如 "Sep 9, 2025,
+        8:59:21 PM"），字典序≠日期序；PK 序（创建序）可靠且走索引。返回 None
+        表示本地快照不可用或哈希失配（调用方应 503，不得静默降级）。
+        """
+        if not cls._local_validation().get("ok"):
+            return None
+        page = max(1, int(page))
+        page_size = max(1, min(100, int(page_size)))
+        offset = (page - 1) * page_size
+        q = (q or "").strip()
+        order = "euvd_id ASC" if sort == "euvd_id_asc" else "euvd_id DESC"
+
+        with closing(cls._local_connect()) as connection:
+            euvd_ids: list[str] = []
+            total = 0
+            if q.upper().startswith("CVE"):
+                pattern = f"{q}%"  # LIKE 大小写不敏感
+                total = int(
+                    connection.execute(
+                        "SELECT COUNT(DISTINCT euvd_id) FROM cve_euvd_mapping "
+                        "WHERE cve_id LIKE ?",
+                        (pattern,),
+                    ).fetchone()[0]
+                )
+                rows = connection.execute(
+                    "SELECT DISTINCT euvd_id FROM cve_euvd_mapping "
+                    "WHERE cve_id LIKE ? ORDER BY euvd_id DESC LIMIT ? OFFSET ?",
+                    (pattern, page_size, offset),
+                ).fetchall()
+                euvd_ids = [str(r["euvd_id"]) for r in rows]
+            else:
+                if q:
+                    where, params_total = "WHERE euvd_id LIKE ?", (f"{q}%",)
+                    params_list = (f"{q}%", page_size, offset)
+                else:
+                    where, params_total, params_list = "", (), (page_size, offset)
+                total = int(
+                    connection.execute(
+                        f"SELECT COUNT(*) FROM vulnerabilities {where}", params_total
+                    ).fetchone()[0]
+                )
+                rows = connection.execute(
+                    f"SELECT euvd_id FROM vulnerabilities {where} ORDER BY {order} "
+                    f"LIMIT ? OFFSET ?",
+                    params_list,
+                ).fetchall()
+                euvd_ids = [str(r["euvd_id"]) for r in rows]
+
+            if not euvd_ids:
+                return {
+                    "records": [], "total": total, "page": page,
+                    "page_size": page_size, "sort": sort, "query": q,
+                }
+
+            placeholders = ",".join("?" * len(euvd_ids))
+            rec_rows = connection.execute(
+                f"SELECT euvd_id, record_json FROM vulnerabilities "
+                f"WHERE euvd_id IN ({placeholders})",
+                euvd_ids,
+            ).fetchall()
+            rec_map = {str(r["euvd_id"]): str(r["record_json"]) for r in rec_rows}
+
+            kev_rows = connection.execute(
+                f"SELECT DISTINCT euvd_id FROM known_exploited "
+                f"WHERE euvd_id IN ({placeholders})",
+                euvd_ids,
+            ).fetchall()
+            kev_set = {str(r["euvd_id"]) for r in kev_rows}
+
+            cve_rows = connection.execute(
+                f"SELECT euvd_id, cve_id FROM cve_euvd_mapping "
+                f"WHERE euvd_id IN ({placeholders})",
+                euvd_ids,
+            ).fetchall()
+            cve_map: dict[str, list[str]] = {}
+            for r in cve_rows:
+                cve_map.setdefault(str(r["euvd_id"]), []).append(str(r["cve_id"]))
+
+        records: list[dict[str, Any]] = []
+        for eid in euvd_ids:
+            raw = rec_map.get(eid)
+            if not raw:
+                continue
+            try:
+                payload = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            products: list[dict[str, str]] = []
+            for entry in (payload.get("enisaIdProduct") or [])[:3]:
+                if isinstance(entry, dict):
+                    prod = entry.get("product")
+                    if not isinstance(prod, dict):
+                        continue
+                    vendor = prod.get("vendor")
+                    products.append(
+                        {
+                            "name": str(prod.get("name") or ""),
+                            "vendor": str(vendor.get("name") or "")
+                            if isinstance(vendor, dict)
+                            else "",
+                        }
+                    )
+            score = payload.get("baseScore")
+            try:
+                score_val = float(score) if score is not None else None
+            except (TypeError, ValueError):
+                score_val = None
+            if score_val is None:
+                severity = "未评级"
+            elif score_val >= 9:
+                severity = "严重"
+            elif score_val >= 7:
+                severity = "高"
+            elif score_val >= 4:
+                severity = "中"
+            else:
+                severity = "低"
+            cves = cve_map.get(eid, [])
+            records.append(
+                {
+                    "euvd_id": eid,
+                    "cve_id": cves[0] if cves else None,
+                    "cve_ids": cves,
+                    "base_score": score,
+                    "severity": severity,
+                    "date_published": str(payload.get("datePublished") or ""),
+                    "date_updated": str(payload.get("dateUpdated") or ""),
+                    "products": products,
+                    "kev": eid in kev_set,
+                    "description_preview": str(payload.get("description") or "")[:200],
+                }
+            )
+
+        return {
+            "records": records,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "sort": sort,
+            "query": q,
+        }
+
+    @classmethod
     def local_feed_snapshots(cls) -> list[dict[str, Any]] | None:
         status = cls.local_snapshot_status()
         if status is None or status.get("status") == "local_unavailable":

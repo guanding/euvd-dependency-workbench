@@ -731,6 +731,33 @@ async def refresh_euvd_snapshots() -> dict[str, Any]:
         raise HTTPException(status_code=503, detail=repair_text(exc)) from exc
 
 
+@app.get("/api/euvd/records")
+async def list_euvd_records(
+    page: int = 1,
+    page_size: int = 50,
+    sort: str = "euvd_id_desc",
+    q: str = "",
+) -> dict[str, Any]:
+    """改进1：EUVD 目录列表 + 搜索（只读快照查询，绝不联网，绝不写快照）。"""
+    try:
+        page = max(1, int(page))
+        page_size = max(1, min(100, int(page_size)))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="page/page_size 必须为整数") from exc
+    result = await asyncio.to_thread(
+        EuvdClient.list_euvd_records, page, page_size, sort, q
+    )
+    if result is None:
+        raise HTTPException(status_code=503, detail="本地 EUVD 快照不可用或哈希失配")
+    status = await asyncio.to_thread(EuvdClient.local_snapshot_status)
+    result["freshness"] = {
+        "last_successful_to_date": (status or {}).get("last_successful_to_date", ""),
+        "reference_data_freshness": (status or {}).get("reference_data_freshness", ""),
+        "vulnerability_count": (status or {}).get("vulnerability_count", 0),
+    }
+    return result
+
+
 def _get_case_or_404(case_id: str) -> dict[str, Any]:
     try:
         return WORKFLOW_STORE.get_case(case_id)
