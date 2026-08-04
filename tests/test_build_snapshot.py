@@ -131,6 +131,21 @@ class BuildSnapshotAllowlistTests(unittest.TestCase):
         )
         self.assertIn("sbom_lookup_runs", meta["consumer_excluded_tables"])
 
+    def test_wal_mode_source_builds_without_false_drift_trip(self):
+        # The real mirror uses WAL journal mode. Opening a WAL DB read-only
+        # touches -wal/-shm mtimes; drift detection must key on WAL size, not
+        # mtime, or every build of the live mirror false-trips with "source
+        # EUVD database or WAL changed while snapshot was built".
+        source_wal = self.dir / "mirror_wal.sqlite3"
+        _make_source(source_wal)  # all mirror-shaped tables, DELETE mode
+        con = sqlite3.connect(source_wal)
+        con.execute("PRAGMA journal_mode=WAL")  # switch to the real mirror's mode
+        con.commit()
+        con.close()
+        output_wal = self.dir / "consumer_wal.sqlite3"
+        result = build_snapshot(source_wal, output_wal)
+        self.assertEqual(result["status"], "completed")
+
     def test_unknown_future_table_also_excluded(self):
         # Defense in depth: a mirror table not on the allowlist (e.g. a future
         # customer-sensitive table) must also be excluded by default.

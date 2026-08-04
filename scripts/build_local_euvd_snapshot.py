@@ -163,9 +163,15 @@ def _build_snapshot(source: Path, output: Path, temporary: Path) -> dict[str, An
 
     source_state_after = file_state(source)
     source_wal_state_after = file_state(source_wal)
+    # Drift detection guards a real concurrent write during backup. The main DB
+    # file is compared fully (size+mtime+ctime). The WAL sidecar is compared by
+    # size only: opening a WAL-mode database read-only touches the -wal/-shm
+    # files (their mtime/ctime change) but never grows them, so a read would
+    # false-trip a full-state comparison on every build. A concurrent write, by
+    # contrast, grows the WAL — which size comparison still catches.
     if (
         source_state_before != source_state_after
-        or source_wal_state_before != source_wal_state_after
+        or source_wal_state_before["size"] != source_wal_state_after["size"]
     ):
         temporary.unlink(missing_ok=True)
         raise RuntimeError(
