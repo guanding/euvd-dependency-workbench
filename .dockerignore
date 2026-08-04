@@ -1,0 +1,9 @@
+data/
+outputs/
+exports/
+samples/
+runtime/
+tests/
+*.zip
+**/__pycache__/
+**/*.pyc
