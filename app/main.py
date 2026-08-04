@@ -7,7 +7,7 @@ import os
 import re
 import uuid
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +57,11 @@ DATA_DIR = Path(os.getenv("DATA_DIR", "/app/data"))
 UPLOAD_DIR = DATA_DIR / "uploads"
 JOB_DIR = DATA_DIR / "jobs"
 OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", "/app/outputs"))
+# Phase 2 mirror ops signal files (shared with the mirror_ops.py orchestrator).
+# Web only writes the request and reads the status; it never runs the sync
+# (constraint #3: the Web workbench is not the synchronization authority).
+SYNC_REQUEST_PATH = DATA_DIR / "sync-request.json"
+SYNC_STATUS_PATH = DATA_DIR / "sync-status.json"
 MAX_COMPONENTS = int(os.getenv("MAX_COMPONENTS", "2000"))
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 MAX_CYCLONEDX_UPLOAD_BYTES = 10 * 1024 * 1024
@@ -795,6 +800,48 @@ async def refresh_euvd_snapshots() -> dict[str, Any]:
         return {"snapshots": await _refresh_and_record_feeds(force=True)}
     except (httpx.HTTPError, OSError, ValueError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=503, detail=repair_text(exc)) from exc
+
+
+@app.post("/api/euvd/sync-request")
+async def request_mirror_sync() -> dict[str, Any]:
+    """改进2b Phase2: drop a sync-request signal file for the mirror ops
+    orchestrator (mirror_ops.py watch) to pick up. Constraint #3: the Web
+    workbench only writes the signal, it never runs the sync itself.
+    """
+    if SYNC_STATUS_PATH.exists():
+        try:
+            current = json.loads(SYNC_STATUS_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            current = {}
+        if current.get("state") == "running":
+            raise HTTPException(status_code=409, detail="同步正在进行中，请等待完成")
+    request = {
+        "requested_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "actor": "web",
+        "request_id": str(uuid.uuid4()),
+    }
+    SYNC_REQUEST_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SYNC_REQUEST_PATH.write_text(
+        json.dumps(request, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return {"requested": True, "request_id": request["request_id"]}
+
+
+@app.get("/api/euvd/sync-status")
+async def mirror_sync_status() -> dict[str, Any]:
+    if not SYNC_STATUS_PATH.exists():
+        return {
+            "state": "idle",
+            "stage": "",
+            "error": "",
+            "orchestrator_available": False,
+        }
+    try:
+        status = json.loads(SYNC_STATUS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"state": "idle", "stage": "", "error": "status unreadable"}
+    status.setdefault("orchestrator_available", True)
+    return status
 
 
 @app.get("/api/euvd/records")

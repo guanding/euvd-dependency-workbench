@@ -1540,19 +1540,82 @@ async function recordSubmission() {
   }
 }
 
+const SYNC_STAGE_LABELS = {
+  acquire_lock: "获取同步锁",
+  sync_incremental: "增量同步漏洞数据",
+  sync_reference: "刷新 CVE/KEV 参考数据",
+  build_snapshot: "重建消费者快照",
+  done: "完成",
+  watch_loop: "编排器循环",
+};
+
+function renderSyncProgress(status) {
+  const strip = elements.feedSnapshotStatus;
+  if (!strip) return;
+  const state = status.state || "idle";
+  const stageLabel = SYNC_STAGE_LABELS[status.stage] || status.stage || "";
+  if (state === "idle" && !status.orchestrator_available) {
+    strip.innerHTML = `<div class="muted">编排器未运行（需启动 mirror_ops.py watch）。点击“一键更新 EUVD”会写入请求，待编排器启动后自动执行。</div>`;
+    return;
+  }
+  if (state === "idle") {
+    strip.innerHTML = `<div class="muted">空闲。点击“一键更新 EUVD”请求同步。</div>`;
+    return;
+  }
+  if (state === "running") {
+    strip.innerHTML = `<div><span class="status-dot online"></span> 同步中：${escapeHtml(stageLabel)}…</div>`;
+    return;
+  }
+  if (state === "completed") {
+    strip.innerHTML = `<div><span class="status-dot online"></span> 已更新到 ${escapeHtml(status.last_successful_to_date || "最新")}（${formatNumber(status.vulnerability_count || 0)} 漏洞）</div>`;
+    return;
+  }
+  if (state === "failed") {
+    strip.innerHTML = `<div><span class="status-dot offline"></span> 同步失败：${escapeHtml(status.error || "未知错误")}</div>`;
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function pollSyncStatus() {
+  while (true) {
+    let status;
+    try {
+      status = await api("/api/euvd/sync-status");
+    } catch {
+      await sleep(2000);
+      continue;
+    }
+    renderSyncProgress(status);
+    if (status.state === "completed") return status;
+    if (status.state === "failed") {
+      throw new Error(status.error || "同步失败");
+    }
+    await sleep(1500);
+  }
+}
+
 async function refreshFeeds() {
   elements.refreshFeedsButton.disabled = true;
   try {
-    const result = await api("/api/euvd/snapshots/refresh", { method: "POST" });
-    await loadArt14Workspace(true);
+    await api("/api/euvd/sync-request", { method: "POST" });
+    showToast("已请求一键更新，等待编排器执行…", "info");
+    const status = await pollSyncStatus();
     await checkEuvd();
+    await loadArt14Workspace(true);
     showToast(
-      result.snapshots?.mode === "local-read-only-inspection"
-        ? "已复核本地只读快照；正式同步请运行独立镜像项目"
-        : "EUVD 映射和 KEV 快照已更新",
+      `EUVD 已更新到 ${status.last_successful_to_date || "最新"}（${formatNumber(status.vulnerability_count || 0)} 漏洞）`,
+      "success",
     );
   } catch (error) {
     showToast(error.message, "error");
+    try {
+      renderSyncProgress(await api("/api/euvd/sync-status"));
+    } catch {
+      /* ignore */
+    }
   } finally {
     elements.refreshFeedsButton.disabled = false;
   }
