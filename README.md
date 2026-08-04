@@ -1,6 +1,6 @@
 # EUVD Dependency Workbench
 
-当前 Docker 本机候选版本：`v2.3.1`
+当前 Docker 本机候选版本：`v2.3.1`（版本号唯一来源为 `app/main.py` 的 `APP_VERSION`；docker 镜像 tag 与 `/api/health` 必须一致，用 `python scripts/check_version_consistency.py` 校验）
 
 这是一个本地、轻量、可迁移的客户 SBOM 漏洞管理工作台。信息架构参考
 Dependency-Track 的项目化工作方式，但只查询 ENISA European Vulnerability

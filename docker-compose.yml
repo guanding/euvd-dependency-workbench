@@ -4,6 +4,8 @@ services:
   matcher:
     build:
       context: .
+    # 版本号单一源 = app/main.py 的 APP_VERSION。tag 必须与之一致；
+    # 发布前用 `python scripts/check_version_consistency.py` 校验。
     image: euvd-dependency-workbench:2.3.1
     restart: unless-stopped
     init: true
