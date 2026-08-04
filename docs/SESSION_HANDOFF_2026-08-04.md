@@ -11,7 +11,7 @@
 
 从一次 7 维度并行架构审查 Workflow 出发（6/7 维度成功，1 维度因 API 速率限制未完成），按优先级交付：客户数据外泄堵漏、双项目版本控制基线、版本号单一源、EUVD 目录列表/搜索（改进 1）、数据日期展示 + 按钮文案修正（改进 2a/Phase1）、CVE 匹配静默漏报修复、积极利用漏洞标注（CRA Art.3(42)）、403 fail-fast。
 
-**9 个 Web commit + 2 个 Mirror commit；Web 测试 40→65 项，Mirror 测试 17→18 项，全绿。**
+**9 个 Web commit + 5 个 Mirror commit；Web 测试 40→65 项，Mirror 测试 17→36 项，全绿。**
 
 ---
 
@@ -54,11 +54,14 @@
 | `568b9ad` | fix | CVE 精确优先改"优先+兜底"，CVE 未映射时回退产品候选（修复静默漏报，审查 HIGH#1） | +3 (test_matcher_cve_fallback) |
 | `ee6fc27` | feat | 积极利用标注 + 筛选（CRA Art.3(42)，`actively_exploited=KEV∪exploitedSince`，行标红 + "仅积极利用"开关） | +5 (test_euvd_records 增项) |
 
-### Mirror 项目（2 commit，main 分支）
+### Mirror 项目（5 commit，main 分支）
 | commit | 类型 | 内容 | 测试 |
 |---|---|---|---|
 | `38a649b` | chore | D0: Mirror Git 基线 + 补 .gitignore（排除 backups/data/lkg，401 文件含 vendor 锁定依赖） | — |
 | `5e6e9bd` | fix | 403 fail-fast（移出瞬时重试集 `{403,429,5xx}`→`{429,5xx}`，不再阻塞约 9 分钟） | +1 (test_403) |
+| `e94d83c` | feat | 4-3 `MirrorStore.exclusive_lock` 跨进程 advisory lock（fcntl.flock sidecar 锁文件，None/0/>0 超时；改进 2(b) 并发前置基础设施，main/snapshot 入口接线留待 Phase2） | +6 (test_mirror_lock) |
+| `de229ab` | feat | 4-4 reference pair 原子性（`import_reference_pair` 单事务 + sync_all fetch-first，mapping+KEV 同代提交/同回滚，消除跨代 mismatch） | +3 (test_reference_pair_atomicity) |
+| `de24ddd` | fix | 4-2 bootstrap 状态机（`decide_bootstrap_phase` 纯函数 + `_run_bootstrap_flow`，paging_completed_at 守卫，catchup 失败不再触发 ~37 万漏洞全量重做） | +9 (test_bootstrap_state_machine) |
 
 ---
 
@@ -75,10 +78,10 @@
 | HIGH | CVE 精确优先漏报 | matcher.py:1442 (match_components) | ✅ 优先+兜底 |
 | HIGH | awareness 可被覆盖（approved/submitted 案件） | workflow_store.py:831 | ⏳ 第七步 |
 | HIGH | stale 重开不区分 customer | workflow_store.py:474 | ⏳ 第七步 |
-| 中危 | 无跨进程 advisory lock | euvd_sync.py:256 | ⏳ 第四步-3 |
-| 中危 | 403 重试 9 分钟 | euvd_sync.py:1062 | ✅ fail-fast |
-| 中危 | bootstrap 全量回滚 | euvd_sync.py:1225 (main:1416) | ⏳ 第四步-2 |
-| 中危 | reference pair 非原子 | euvd_sync.py:1128 | ⏳ 第四步-4 |
+| 中危 | 无跨进程 advisory lock | euvd_sync.py MirrorStore | ✅ 4-3 exclusive_lock |
+| 中危 | 403 重试 9 分钟 | euvd_sync.py EuvdClient | ✅ fail-fast |
+| 中危 | bootstrap 全量回滚 | euvd_sync.py main | ✅ 4-2 状态机 |
+| 中危 | reference pair 非原子 | euvd_sync.py sync_all | ✅ 4-4 import_reference_pair |
 | 中危 | JSON 任务与 SQLite 非原子 | main.py:440 | ⏳ D2 |
 | 中危 | startup 删 7 天上传无 dry-run | main.py:1276 | ⏳ D2 |
 | 中危 | 无 schema migration | euvd_sync.py:274 | ⏳ D1/D3 |
@@ -114,7 +117,9 @@ curl -fsS http://127.0.0.1:8090/api/health  # snapshot_sha256 一致
 
 ## 6. 剩余路线图
 
-### 第四步剩余（同步引擎硬化，3 项，每项独立 commit）
+### 第四步（同步引擎硬化）— ✅ 已完成（2026-08-04 续做，commit e94d83c/de229ab/de24ddd，Mirror 测试 18→36）
+
+> 三项已交付（4-3 advisory lock / 4-4 reference 原子性 / 4-2 bootstrap 状态机），下方原始设计描述保留作为实现依据。
 
 **4-2 bootstrap 状态机**（`euvd_sync.py` main:1416-1437 + sync_pages:1225-1227）
 - 问题：bootstrap completed 立即设 `bootstrap_next_page=0`，随后的 catchup 失败 → 下次 bootstrap 因 `start_page==0` 重置 anchor → 全量重做（37 万漏洞数小时）
@@ -167,7 +172,7 @@ EUVD_LOCAL_DB_SHA256_FILE="$PWD/data/euvd-readonly.sqlite3.sha256" \
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests
 rm -rf "$handoff"
 
-# Mirror（18 项）
+# Mirror（36 项）
 cd /Users/mac/EUVD-Local-Mirror
 python3 -m unittest discover -s tests
 ```
