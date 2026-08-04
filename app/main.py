@@ -1216,6 +1216,7 @@ async def upload_preview(file: UploadFile = File(...)) -> dict[str, Any]:
         "pre7_evidence_artifact": evidence_reference,
         "pre7_evidence_summary": compact_summary,
         "automatic_conformity_decision": False,
+        "metadata_binding": parsed.get("metadata_binding"),
     }
 
 

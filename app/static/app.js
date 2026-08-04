@@ -663,13 +663,33 @@ async function uploadFile(file) {
     const result = await api("/api/uploads/preview", { method: "POST", body: form });
     state.upload = result;
     state.mapping = { ...result.mapping };
-    if (!elements.projectName.value.trim()) {
+    // D1: prefilled product identity from the customer Metadata sheet (editable).
+    const binding = result.metadata_binding;
+    const bound = [];
+    if (binding && binding.fields) {
+      const f = binding.fields;
+      if (f.product_name && !elements.projectName.value.trim()) {
+        elements.projectName.value = f.product_name;
+        bound.push("产品名称");
+      }
+      if (f.product_version) {
+        elements.projectVersion.value = f.product_version;
+        bound.push("产品版本");
+      }
+      if (f.software_build) {
+        elements.softwareBuild.value = f.software_build;
+        bound.push("构建号");
+      }
+    } else if (!elements.projectName.value.trim()) {
       elements.projectName.value = result.file_name.replace(/\.[^.]+$/, "");
     }
     renderMapping();
     renderPreview();
     elements.fileMeta.textContent = `${result.file_name} · ${result.sheet}`;
-    elements.previewMeta.textContent = `${result.row_count} 行 · 表头位于第 ${result.header_row} 行`;
+    const boundHint = bound.length
+      ? ` · 已从${binding.source_sheet || "元数据页"}绑定 ${bound.join("、")}（可修改）`
+      : "";
+    elements.previewMeta.textContent = `${result.row_count} 行 · 表头位于第 ${result.header_row} 行${boundHint}`;
     elements.mappingArea.classList.remove("hidden");
   } catch (error) {
     showToast(error.message, "error");

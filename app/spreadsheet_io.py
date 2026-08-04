@@ -118,6 +118,128 @@ HEADER_ALIASES = {
 }
 
 
+# D1: customer-template Metadata-sheet labels. The 01_Metadata_元数据 sheet is a
+# label/value table (A=label, B=customer entry). These map labels to product
+# identity (prefilled into the operator's inputs) plus extra fields retained only
+# as audit evidence. Matched by substring on normalize_key() so
+# "Product name 产品名称", "产品名称", and "Product name" all resolve.
+METADATA_LABEL_ALIASES = {
+    "product_name": {
+        "product name 产品名称",
+        "产品名称",
+        "product name",
+        "productname",
+    },
+    "product_version": {
+        "product version 产品版本",
+        "产品版本",
+        "product version",
+        "productversion",
+    },
+    "software_build": {
+        "build id 构建号",
+        "构建号",
+        "build id",
+        "build identifier",
+    },
+    "hardware_revision": {
+        "hardware revision 硬件修订",
+        "硬件修订",
+        "hardware revision",
+    },
+    "release_date": {
+        "release date 发布日期",
+        "发布日期",
+        "release date",
+    },
+    "sbom_version": {
+        "sbom version sbom版本",
+        "sbom版本",
+        "sbom version",
+    },
+}
+METADATA_IDENTITY_FIELDS = ("product_name", "product_version", "software_build")
+
+
+def _match_metadata_label(label: Any) -> str | None:
+    text = normalize_key(label)
+    if not text:
+        return None
+    for field, aliases in METADATA_LABEL_ALIASES.items():
+        for alias in aliases:
+            normalized_alias = normalize_key(alias)
+            if normalized_alias and normalized_alias in text:
+                return field
+    return None
+
+
+def _read_label_value_pairs(worksheet: Any, max_rows: int = 30) -> list[tuple[Any, Any]]:
+    pairs: list[tuple[Any, Any]] = []
+    for row in worksheet.iter_rows(min_row=1, max_row=max_rows, values_only=True):
+        cells = list(row) + [None, None]
+        label = cells[0]
+        value = cells[1]
+        if label is None and value is None:
+            continue
+        pairs.append((label, value))
+    return pairs
+
+
+def _looks_like_metadata(worksheet: Any) -> bool:
+    matched = {
+        _match_metadata_label(label)
+        for label, _ in _read_label_value_pairs(worksheet, max_rows=15)
+    }
+    return len(matched & set(METADATA_IDENTITY_FIELDS)) >= 2
+
+
+def _extract_metadata_binding(workbook: Any) -> dict[str, Any] | None:
+    """Extract product identity from a customer Metadata sheet.
+
+    Identifies the sheet by name (contains "metadata"/"元数据") with a content
+    fallback (>=2 product-identity labels), reads its label/value column, and
+    maps labels to prefilled identity fields plus audit-only evidence. Returns
+    None when no Metadata sheet is present (csv/json, or xlsx without one).
+    """
+    visible = [s for s in workbook.worksheets if s.sheet_state == "visible"] or [
+        workbook.active
+    ]
+    metadata_sheet = None
+    for sheet in visible:
+        title_lc = (sheet.title or "").casefold()
+        if "metadata" in title_lc or "元数据" in title_lc:
+            metadata_sheet = sheet
+            break
+    if metadata_sheet is None:
+        for sheet in visible:
+            if _looks_like_metadata(sheet):
+                metadata_sheet = sheet
+                break
+    if metadata_sheet is None:
+        return None
+    fields: dict[str, str] = {}
+    evidence: dict[str, str] = {}
+    raw: dict[str, str] = {}
+    for label, value in _read_label_value_pairs(metadata_sheet, max_rows=30):
+        text = repair_text(value)
+        label_text = repair_text(label)
+        if label_text:
+            raw[label_text] = text
+        field = _match_metadata_label(label)
+        if not field or not text:
+            continue
+        if field in METADATA_IDENTITY_FIELDS:
+            fields.setdefault(field, text)
+        else:
+            evidence.setdefault(field, text)
+    return {
+        "fields": fields,
+        "evidence": evidence,
+        "raw": raw,
+        "source_sheet": metadata_sheet.title,
+    }
+
+
 def _safe_cell(value: Any) -> Any:
     if value is None:
         return ""
@@ -221,6 +343,7 @@ def _read_xlsx(path: Path) -> dict[str, Any]:
             candidates, key=lambda item: item[0]
         )
         worksheet_title = worksheet.title
+        metadata_binding = _extract_metadata_binding(workbook)
     finally:
         workbook.close()
     rows: list[dict[str, Any]] = []
@@ -235,6 +358,7 @@ def _read_xlsx(path: Path) -> dict[str, Any]:
         "header_row": header_index + 1,
         "headers": headers,
         "rows": rows,
+        "metadata_binding": metadata_binding,
     }
 
 
@@ -428,6 +552,7 @@ def read_sbom(path: Path) -> dict[str, Any]:
             for row in result["rows"]
             if any(repair_text(row.get(header)) for header in identity_headers)
         ]
+    result.setdefault("metadata_binding", None)
     return result
 
 
