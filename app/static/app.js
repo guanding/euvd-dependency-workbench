@@ -15,6 +15,7 @@ const state = {
   art14Cases: [],
   reviewers: [],
   snapshots: [],
+  euvdCatalog: { records: [], total: 0, page: 1, page_size: 50, sort: "euvd_id_desc", q: "", loaded: false },
   currentCase: null,
   projectDetailSearch: "",
   pollTimer: null,
@@ -80,6 +81,14 @@ const elements = {
   art14NavCount: document.getElementById("art14NavCount"),
   feedSnapshotStatus: document.getElementById("feedSnapshotStatus"),
   refreshFeedsButton: document.getElementById("refreshFeedsButton"),
+  euvdCatalogSearch: document.getElementById("euvdCatalogSearch"),
+  euvdCatalogSort: document.getElementById("euvdCatalogSort"),
+  euvdCatalogMeta: document.getElementById("euvdCatalogMeta"),
+  euvdCatalogBody: document.getElementById("euvdCatalogBody"),
+  euvdCatalogPrev: document.getElementById("euvdCatalogPrev"),
+  euvdCatalogNext: document.getElementById("euvdCatalogNext"),
+  euvdCatalogPageInfo: document.getElementById("euvdCatalogPageInfo"),
+  euvdCatalogFreshness: document.getElementById("euvdCatalogFreshness"),
   art14ListMeta: document.getElementById("art14ListMeta"),
   art14CasesBody: document.getElementById("art14CasesBody"),
   art14CaseDetail: document.getElementById("art14CaseDetail"),
@@ -252,6 +261,7 @@ function showView(viewId) {
   if (viewId === "projectsView") loadProjects();
   if (viewId === "componentsView") loadComponents();
   if (viewId === "vulnerabilitiesView") loadVulnerabilities();
+  if (viewId === "euvdCatalogView") loadEuvdCatalog();
   if (viewId === "art14View") loadArt14Workspace();
   window.scrollTo({ top: 0, behavior: "instant" });
 }
@@ -994,6 +1004,85 @@ function renderFeedSnapshots() {
       .join("") || '<span class="status-chip warning">尚无快照状态；首次扫描或手工更新后生成</span>';
 }
 
+// 改进1：EUVD 目录（只读快照全库浏览）。搜索/排序/分页均通过 /api/euvd/records
+// 服务端处理，前端不一次性加载 37 万条。
+async function loadEuvdCatalog(force = false) {
+  if (state.euvdCatalog.loaded && !force) {
+    renderEuvdCatalog();
+    return;
+  }
+  try {
+    const cat = state.euvdCatalog;
+    const params = new URLSearchParams({
+      page: String(cat.page),
+      page_size: String(cat.page_size),
+      sort: cat.sort,
+    });
+    if (cat.q) params.set("q", cat.q);
+    const result = await api(`/api/euvd/records?${params}`);
+    state.euvdCatalog.records = result.records || [];
+    state.euvdCatalog.total = result.total || 0;
+    state.euvdCatalog.loaded = true;
+    renderEuvdCatalog(result.freshness);
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function renderEuvdCatalog(freshness) {
+  const cat = state.euvdCatalog;
+  elements.euvdCatalogBody.innerHTML =
+    cat.records
+      .map((row) => {
+        const sevTone =
+          row.severity === "严重" ? "danger"
+          : row.severity === "高" ? "warning"
+          : "review";
+        const products =
+          (row.products || [])
+            .map((p) => {
+              const name = escapeHtml(p.name || "");
+              const vendor = p.vendor ? ` <span class="muted">· ${escapeHtml(p.vendor)}</span>` : "";
+              return name ? `${name}${vendor}` : "";
+            })
+            .filter(Boolean)
+            .join("<br>") || '<span class="muted">—</span>';
+        return `
+          <tr>
+            <td><a class="euvd-link" href="https://euvd.enisa.europa.eu/vulnerability/${encodeURIComponent(row.euvd_id)}" target="_blank" rel="noreferrer">${escapeHtml(row.euvd_id)}</a></td>
+            <td>${row.cve_id ? escapeHtml(row.cve_id) : '<span class="muted">—</span>'}</td>
+            <td><span class="status-badge ${sevTone}">${escapeHtml(row.severity)}</span></td>
+            <td>${row.base_score != null ? escapeHtml(String(row.base_score)) : '<span class="muted">—</span>'}</td>
+            <td>${products}</td>
+            <td>${row.kev ? '<span class="status-badge danger">KEV</span>' : '<span class="muted">—</span>'}</td>
+            <td>${escapeHtml(formatDate(row.date_published))}</td>
+            <td>${escapeHtml(formatDate(row.date_updated))}</td>
+          </tr>`;
+      })
+      .join("") || emptyRow(8);
+  const start = cat.total === 0 ? 0 : (cat.page - 1) * cat.page_size + 1;
+  const end = Math.min(cat.page * cat.page_size, cat.total);
+  elements.euvdCatalogMeta.textContent = `共 ${formatNumber(cat.total)} 条`;
+  elements.euvdCatalogPageInfo.textContent = `第 ${cat.page} 页 · 显示 ${start}-${end}`;
+  elements.euvdCatalogPrev.disabled = cat.page <= 1;
+  elements.euvdCatalogNext.disabled = cat.page * cat.page_size >= cat.total;
+  if (freshness) {
+    elements.euvdCatalogFreshness.textContent =
+      `数据截止 ${freshness.last_successful_to_date || "未知"} · ${formatNumber(freshness.vulnerability_count || 0)} 漏洞 · ${freshnessLabel(freshness.reference_data_freshness || "")}`;
+  }
+}
+
+let euvdCatalogSearchTimer = null;
+function onEuvdCatalogSearchInput() {
+  clearTimeout(euvdCatalogSearchTimer);
+  euvdCatalogSearchTimer = setTimeout(() => {
+    state.euvdCatalog.q = elements.euvdCatalogSearch.value.trim();
+    state.euvdCatalog.page = 1;
+    state.euvdCatalog.loaded = false;
+    loadEuvdCatalog(true);
+  }, 400);
+}
+
 function nextCaseDeadline(row) {
   const deadlines = row.deadlines || {};
   const stage = row.reporting_stage || "not_started";
@@ -1471,6 +1560,25 @@ elements.createManualCaseButton.addEventListener("click", createManualCase);
 elements.importVexButton.addEventListener("click", importVex);
 elements.createReviewerButton.addEventListener("click", createReviewer);
 elements.refreshFeedsButton.addEventListener("click", refreshFeeds);
+elements.euvdCatalogSearch.addEventListener("input", onEuvdCatalogSearchInput);
+elements.euvdCatalogSort.addEventListener("change", () => {
+  state.euvdCatalog.sort = elements.euvdCatalogSort.value;
+  state.euvdCatalog.page = 1;
+  state.euvdCatalog.loaded = false;
+  loadEuvdCatalog(true);
+});
+elements.euvdCatalogPrev.addEventListener("click", () => {
+  if (state.euvdCatalog.page > 1) {
+    state.euvdCatalog.page -= 1;
+    state.euvdCatalog.loaded = false;
+    loadEuvdCatalog(true);
+  }
+});
+elements.euvdCatalogNext.addEventListener("click", () => {
+  state.euvdCatalog.page += 1;
+  state.euvdCatalog.loaded = false;
+  loadEuvdCatalog(true);
+});
 elements.closeCaseDetailButton.addEventListener("click", () => {
   state.currentCase = null;
   elements.art14CaseDetail.classList.add("hidden");

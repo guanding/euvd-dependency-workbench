@@ -53,6 +53,10 @@
             <i data-lucide="shield-alert" aria-hidden="true"></i>
             <span>漏洞</span>
           </button>
+          <button class="nav-item" data-view="euvdCatalogView" type="button">
+            <i data-lucide="book-open" aria-hidden="true"></i>
+            <span>EUVD 目录</span>
+          </button>
           <button class="nav-item" data-view="art14View" type="button">
             <i data-lucide="clipboard-check" aria-hidden="true"></i>
             <span>Art.14 案件</span>
@@ -255,6 +259,52 @@
               </thead>
               <tbody id="vulnerabilitiesBody"></tbody>
             </table>
+          </div>
+        </section>
+
+        <section id="euvdCatalogView" class="app-view hidden">
+          <div class="page-heading">
+            <div>
+              <h1>EUVD 目录</h1>
+              <p>本地只读快照全库浏览（<strong id="euvdCatalogFreshness" class="muted"></strong>）；搜索 EUVD ID 或 CVE；Art.14 结论必须人工审批。</p>
+            </div>
+          </div>
+          <div class="list-toolbar toolbar-wrap">
+            <label class="search-box">
+              <i data-lucide="search" aria-hidden="true"></i>
+              <input id="euvdCatalogSearch" type="search" placeholder="搜索 EUVD ID（如 EUVD-2024-）或 CVE（如 CVE-2024-）" />
+            </label>
+            <select id="euvdCatalogSort" class="icon-text-button" aria-label="排序">
+              <option value="euvd_id_desc">EUVD ID 降序（最新创建）</option>
+              <option value="euvd_id_asc">EUVD ID 升序</option>
+            </select>
+            <div id="euvdCatalogMeta" class="muted"></div>
+          </div>
+          <div class="table-frame tall-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>EUVD ID</th>
+                  <th>CVE</th>
+                  <th>严重性</th>
+                  <th>评分</th>
+                  <th>产品 / 厂商</th>
+                  <th>KEV</th>
+                  <th>发布日</th>
+                  <th>更新日</th>
+                </tr>
+              </thead>
+              <tbody id="euvdCatalogBody"></tbody>
+            </table>
+          </div>
+          <div class="list-toolbar toolbar-wrap">
+            <button id="euvdCatalogPrev" class="icon-text-button" type="button" disabled>
+              <i data-lucide="chevron-left" aria-hidden="true"></i>上一页
+            </button>
+            <span id="euvdCatalogPageInfo" class="muted"></span>
+            <button id="euvdCatalogNext" class="icon-text-button" type="button" disabled>
+              下一页<i data-lucide="chevron-right" aria-hidden="true"></i>
+            </button>
           </div>
         </section>
 
