@@ -93,7 +93,9 @@
 
 ## 5. 重要遗留（需行动）
 
-### 5.1 快照未重建（allowlist 未实战生效）
+### 5.1 快照重建 — ✅ 已完成（2026-08-04 续做，commit 818841d）
+
+修复 `build_local_euvd_snapshot` 的 WAL 漂移检测（WAL 模式读连接 touch `-wal`/`-shm` 的 mtime，旧全状态比较误判；改为只比 WAL size），重建 `euvd-readonly.sqlite3`：`sbom_lookup_runs`/`sbom_lookup_results` 彻底移除（VACUUM 物理清除），370723→372484 漏洞，sha verified，Web 健康。下方 runbook 命令保留供后续重建。
 表 allowlist 只改了代码 + 单元测试。线上 `euvd-readonly.sqlite3`（1GB）仍是旧脚本构建，**仍含 `sbom_lookup_runs/sbom_lookup_results`**。要在维护窗口用新脚本重建：
 ```bash
 cd euvd-sbom-matcher
@@ -111,7 +113,7 @@ curl -fsS http://127.0.0.1:8090/api/health  # snapshot_sha256 一致
 8090 已运行新版（用户验收改进 1/2a/积极利用通过）。`APP_VERSION` 仍是 `2.3.1`（本次是功能增量，未升版本号）；下次正式发布可升 `2.3.2` 并同步 docker-compose tag + README（用 `scripts/check_version_consistency.py` 校验）。
 
 ### 5.3 数据状态
-仍 `local_degraded`（ENISA 出口 403，数据截止 **2026-07-28**，37 万漏洞）。403 fail-fast 后，下次同步尝试会**快速失败**（秒级）而非卡 9 分钟，但仍需修复合法访问条件或负责人接受 LKG。
+**已推进到 fresh**（2026-08-04 续做）：403 确诊为瞬时速率限制（同 EuvdClient UA + 日期参数 8/4 恢复 HTTP 200，代码 fail-fast 行为正确无 bug），incremental + reference-data 重同步成功，数据截止 **2026-08-04**（372484 漏洞 / 1662 KEV / 355046 mapping），`reference_data_freshness=fresh`，`local_status=local_ready`。403 fail-fast 保留，若再发则保留 LKG 不损坏。
 
 ---
 
