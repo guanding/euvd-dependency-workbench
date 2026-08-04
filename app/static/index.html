@@ -25,9 +25,10 @@
           <i data-lucide="upload" aria-hidden="true"></i>
           <span>导入 SBOM</span>
         </button>
-        <div class="source-pill" title="公开情报来源：ENISA EUVD 与 EU/CISA KEV">
+        <div class="source-pill" id="sourcePill" title="公开情报来源：ENISA EUVD 与 EU/CISA KEV">
           <span id="sourceDot" class="status-dot pending"></span>
           <span id="sourceText">EUVD 检测中</span>
+          <span id="sourceMeta" class="source-meta"></span>
         </div>
       </div>
     </header>
@@ -263,9 +264,9 @@
               <h1>CRA Art.14 案件</h1>
               <p>公开信号、产品适用性、积极利用证据和最终报告决定彼此分离</p>
             </div>
-            <button id="refreshFeedsButton" class="icon-text-button" type="button">
+            <button id="refreshFeedsButton" class="icon-text-button" type="button" title="重新检查本地只读快照状态（不联网同步正式 EUVD；正式同步请在 EUVD-Local-Mirror 项目维护窗口执行）">
               <i data-lucide="refresh-cw" aria-hidden="true"></i>
-              更新 EUVD / KEV
+              复核本地快照状态
             </button>
           </div>
 

@@ -295,6 +295,20 @@ select:focus-visible {
   white-space: nowrap;
 }
 
+.source-meta {
+  font-size: 11px;
+  color: #aeb9c9;
+  border-left: 1px solid #52647b;
+  padding-left: 7px;
+  margin-left: 2px;
+}
+.source-meta.warning {
+  color: #f0c64f;
+}
+.source-meta.danger {
+  color: #f06b73;
+}
+
 .status-dot {
   width: 8px;
   height: 8px;

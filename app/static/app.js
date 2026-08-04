@@ -61,6 +61,7 @@ const elements = {
   navItems: [...document.querySelectorAll(".nav-item")],
   sourceDot: document.getElementById("sourceDot"),
   sourceText: document.getElementById("sourceText"),
+  sourceMeta: document.getElementById("sourceMeta"),
   projectNavCount: document.getElementById("projectNavCount"),
   dashboardTimestamp: document.getElementById("dashboardTimestamp"),
   dashboardMetrics: document.getElementById("dashboardMetrics"),
@@ -268,10 +269,57 @@ async function checkEuvd() {
           : result.status === "online"
             ? "EUVD 在线"
             : "EUVD 暂不可用";
+    renderEuvdMeta(result);
   } catch {
     elements.sourceDot.className = "status-dot offline";
     elements.sourceText.textContent = "EUVD 暂不可用";
+    renderEuvdMeta(null);
   }
+}
+
+// 把 /api/euvd/status 的数据日期/计数/新鲜度渲染到头部 source-meta 徽章。
+// 区分"上游截止日"(last_successful_to_date) 与本地构建日(snapshot_created_at)：
+// 前者是 ENISA 数据高水位，后者是消费者快照构建时间，两者之差即同步滞后。
+function renderEuvdMeta(status) {
+  const meta = elements.sourceMeta;
+  if (!meta) return;
+  if (!status || !status.last_successful_to_date) {
+    meta.textContent = "";
+    meta.className = "source-meta";
+    return;
+  }
+  const freshness = status.reference_data_freshness || "";
+  const parts = [`数据截止 ${status.last_successful_to_date}`];
+  if (status.vulnerability_count) {
+    parts.push(`${formatNumber(status.vulnerability_count)} 漏洞`);
+  }
+  if (freshness && freshness !== "fresh" && freshness !== "unknown") {
+    parts.push(freshnessLabel(freshness));
+  }
+  meta.textContent = parts.join(" · ");
+  meta.className = "source-meta";
+  if (status.status === "local_unavailable") {
+    meta.classList.add("danger");
+  } else if (freshness !== "fresh" && status.status !== "online") {
+    meta.classList.add("warning");
+  }
+  // tooltip 补充本地快照构建日与计数详情
+  const detail = [];
+  if (status.snapshot_created_at) detail.push(`本地快照构建：${formatDate(status.snapshot_created_at)}`);
+  if (status.mapping_count) detail.push(`CVE↔EUVD 映射：${formatNumber(status.mapping_count)}`);
+  if (status.known_exploited_count) detail.push(`KEV：${formatNumber(status.known_exploited_count)}`);
+  const pill = document.getElementById("sourcePill");
+  if (pill) pill.title = `公开情报来源：ENISA EUVD 与 EU/CISA KEV\n${detail.join("\n")}`;
+}
+
+// freshness 枚举实际值（Mirror sync_state）：fresh / degraded_local_snapshot /
+// stale / unavailable / unknown —— 不只是 simple degraded，用前缀判断更稳健。
+function freshnessLabel(f) {
+  if (f === "fresh") return "新鲜";
+  if (f.startsWith("degraded")) return "降级";
+  if (f === "stale") return "过期";
+  if (f === "unavailable") return "不可用";
+  return f;
 }
 
 function metricCard(label, value, tone = "", note = "") {
@@ -1333,6 +1381,7 @@ async function refreshFeeds() {
   try {
     const result = await api("/api/euvd/snapshots/refresh", { method: "POST" });
     await loadArt14Workspace(true);
+    await checkEuvd();
     showToast(
       result.snapshots?.mode === "local-read-only-inspection"
         ? "已复核本地只读快照；正式同步请运行独立镜像项目"
