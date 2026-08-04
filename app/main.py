@@ -361,7 +361,7 @@ def _public_job(job: dict[str, Any]) -> dict[str, Any]:
     response = {
         key: value
         for key, value in job.items()
-        if key not in {"result", "report_path"}
+        if key not in {"result", "report_path", "mapping"}
     }
     result = job.get("result")
     if result:
@@ -383,6 +383,17 @@ def _public_job(job: dict[str, Any]) -> dict[str, Any]:
 async def _run_job(job_id: str, upload_record: dict[str, Any], mapping: dict[str, str]) -> None:
     path = _job_path(job_id)
     job = _read_json(path)
+    if job.get("status") == "canceling":
+        # Cancelled before the worker picked it up.
+        job.update(
+            {
+                "status": "cancelled",
+                "stage": "已取消",
+                "finished_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+            }
+        )
+        _write_json(path, job)
+        return
     try:
         parsed = upload_record["parsed"]
         components = build_components(parsed, mapping, MAX_COMPONENTS)
@@ -398,6 +409,10 @@ async def _run_job(job_id: str, upload_record: dict[str, Any], mapping: dict[str
         _write_json(path, job)
 
         async def progress(completed: int, total: int, component_name: str) -> None:
+            # Cooperative cancellation: the operator may POST /cancel between
+            # components; the next progress callback observes it and aborts.
+            if _read_json(path).get("status") == "canceling":
+                raise JobCancelled()
             job["completed"] = completed
             job["total"] = total
             job["progress"] = round(completed * 100 / total) if total else 100
@@ -437,12 +452,27 @@ async def _run_job(job_id: str, upload_record: dict[str, Any], mapping: dict[str
                 "finished_at": datetime.now().astimezone().isoformat(timespec="seconds"),
             }
         )
+        # Atomicity order: persist the completed job JSON *before* registering
+        # the product snapshot in SQLite. A crash between the two then leaves a
+        # completed job with no snapshot, which the startup reconcile repairs
+        # (completed -> register). The old order (register then write) could
+        # leave a snapshot behind a still-running job that startup would then
+        # mark failed — a contradictory cross-store state.
+        _write_json(path, job)
         await asyncio.to_thread(
             WORKFLOW_STORE.register_sbom_snapshot,
             job,
             str(upload_record.get("source_sha256") or ""),
             str((upload_record.get("parsed") or {}).get("kind") or ""),
             str((upload_record.get("parsed") or {}).get("bom_version") or ""),
+        )
+    except JobCancelled:
+        job.update(
+            {
+                "status": "cancelled",
+                "stage": "已取消",
+                "finished_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+            }
         )
         _write_json(path, job)
     except Exception as exc:
@@ -455,6 +485,42 @@ async def _run_job(job_id: str, upload_record: dict[str, Any], mapping: dict[str
             }
         )
         _write_json(path, job)
+
+
+JOB_ID_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "euvd-sbom-matcher/job")
+
+
+def _idempotent_job_id(upload_id: str, mapping: dict[str, str]) -> str:
+    """Deterministic job id from upload + column mapping.
+
+    Same upload + same mapping returns the same job id, so a duplicate submit
+    (double-click, retry) reuses the existing job instead of spawning a new one.
+    Product identity fields (name/version/build/customer) are deliberately
+    excluded: they are operator-editable metadata, not part of the match work.
+    """
+    canonical = json.dumps(
+        {
+            field: mapping.get(field, "")
+            for field in (
+                "name",
+                "version",
+                "vendor",
+                "purl",
+                "cpe",
+                "scope",
+                "license",
+                "cve",
+                "euvd",
+            )
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+    return str(uuid.uuid5(JOB_ID_NAMESPACE, f"{upload_id}\n{canonical}"))
+
+
+class JobCancelled(Exception):
+    """Raised inside _run_job when the operator requested cancellation."""
 
 
 @app.get("/api/health")
@@ -1235,22 +1301,27 @@ async def create_job(request: MatchRequest, background_tasks: BackgroundTasks) -
     if not any(request.mapping.get(field) for field in ("name", "cve", "euvd")):
         raise HTTPException(status_code=400, detail="必须选择组件名称、CVE 或 EUVD ID 列之一")
 
-    job_id = str(uuid.uuid4())
+    job_id = _idempotent_job_id(request.upload_id, request.mapping)
+    job_path = _job_path(job_id)
+    if job_path.exists():
+        existing = _read_json(job_path)
+        # Idempotent reuse: a duplicate submit of the same upload + mapping
+        # returns the active job instead of spawning a new one. A failed or
+        # cancelled job falls through and is overwritten (re-created) below.
+        if existing.get("status") in {"queued", "running", "completed"}:
+            return _public_job(existing)
     job = {
         "id": job_id,
         "upload_id": request.upload_id,
+        "mapping": dict(request.mapping),
         "file_name": upload_record["original_name"],
         "source_sha256": upload_record.get("source_sha256") or "",
         "sbom_format": (upload_record.get("parsed") or {}).get("kind") or "",
         "sbom_version": (upload_record.get("parsed") or {}).get("bom_version") or "",
         "sbom_spec_version": (upload_record.get("parsed") or {}).get("spec_version") or "",
         "sbom_serial_number": (upload_record.get("parsed") or {}).get("serial_number") or "",
-        "sbom_document_identity": (upload_record.get("parsed") or {}).get(
-            "document_identity"
-        ) or {},
-        "pre7_evidence_summary": (upload_record.get("parsed") or {}).get(
-            "pre7_evidence_summary"
-        ) or {},
+        "sbom_document_identity": (upload_record.get("parsed") or {}).get("document_identity") or {},
+        "pre7_evidence_summary": (upload_record.get("parsed") or {}).get("pre7_evidence_summary") or {},
         "project_name": repair_text(request.project_name)
         or _safe_name(upload_record["original_name"]),
         "project_version": repair_text(request.project_version),
@@ -1263,7 +1334,7 @@ async def create_job(request: MatchRequest, background_tasks: BackgroundTasks) -
         "total": 0,
         "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
     }
-    _write_json(_job_path(job_id), job)
+    _write_json(job_path, job)
     background_tasks.add_task(_run_job, job_id, upload_record, request.mapping)
     return _public_job(job)
 
@@ -1274,6 +1345,61 @@ async def get_job(job_id: str) -> dict[str, Any]:
     if not path.exists():
         raise HTTPException(status_code=404, detail="任务不存在")
     return _public_job(_read_json(path))
+
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+async def cancel_job(job_id: str) -> dict[str, Any]:
+    path = _job_path(job_id)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="任务不存在")
+    job = _read_json(path)
+    if job.get("status") not in {"queued", "running"}:
+        raise HTTPException(
+            status_code=409, detail=f"任务状态 {job.get('status')} 不可取消"
+        )
+    # Mark canceling; _run_job's progress callback observes it between components
+    # and aborts. A queued job that never started is cancelled immediately.
+    job.update({"status": "canceling", "stage": "正在取消"})
+    _write_json(path, job)
+    return _public_job(job)
+
+
+@app.post("/api/jobs/{job_id}/retry")
+async def retry_job(job_id: str, background_tasks: BackgroundTasks) -> dict[str, Any]:
+    path = _job_path(job_id)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="任务不存在")
+    job = _read_json(path)
+    if job.get("status") not in {"failed", "cancelled"}:
+        raise HTTPException(
+            status_code=409, detail=f"任务状态 {job.get('status')} 不可重试"
+        )
+    record_path = _upload_record_path(job.get("upload_id") or "")
+    if not record_path.exists():
+        record_path = _legacy_upload_record_path(job.get("upload_id") or "")
+    if not record_path.exists():
+        raise HTTPException(status_code=404, detail="上传记录已删除，请重新上传")
+    upload_record = _read_json(record_path)
+    job.update(
+        {
+            "status": "queued",
+            "stage": "排队中",
+            "progress": 0,
+            "completed": 0,
+            "total": 0,
+            "error": "",
+            "finished_at": None,
+            "result": None,
+            "report_name": None,
+            "report_path": None,
+        }
+    )
+    _write_json(path, job)
+    background_tasks.add_task(
+        _run_job, job_id, upload_record, job.get("mapping") or {}
+    )
+    return _public_job(job)
 
 
 @app.get("/api/jobs/{job_id}/report")

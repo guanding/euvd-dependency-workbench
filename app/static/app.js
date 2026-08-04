@@ -187,6 +187,7 @@ const elements = {
   progressPercent: document.getElementById("progressPercent"),
   progressBar: document.getElementById("progressBar"),
   progressDetail: document.getElementById("progressDetail"),
+  progressAction: document.getElementById("progressAction"),
   projectMetrics: document.getElementById("projectMetrics"),
   projectQualityPanel: document.getElementById("projectQualityPanel"),
   projectQuality: document.getElementById("projectQuality"),
@@ -809,6 +810,39 @@ function renderProgress(job) {
     job.total > 0
       ? `${job.completed || 0} / ${job.total}${job.current_component ? ` · ${job.current_component}` : ""}`
       : "正在准备组件清单";
+  const action = elements.progressAction;
+  if (!action) return;
+  if (job.status === "queued" || job.status === "running") {
+    action.innerHTML = `<button class="btn" id="cancelJobBtn">取消任务</button>`;
+    document.getElementById("cancelJobBtn")?.addEventListener("click", () => cancelJob(job.id));
+  } else if (job.status === "canceling") {
+    action.innerHTML = `<span class="muted">正在取消…</span>`;
+  } else if (job.status === "failed" || job.status === "cancelled") {
+    action.innerHTML = `<button class="btn" id="retryJobBtn">重新扫描</button>`;
+    document.getElementById("retryJobBtn")?.addEventListener("click", () => retryJob(job.id));
+  } else {
+    action.innerHTML = "";
+  }
+}
+
+async function cancelJob(jobId) {
+  try {
+    await api(`/api/jobs/${jobId}/cancel`, { method: "POST" });
+    showToast("正在取消任务", "info");
+    pollJob();
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function retryJob(jobId) {
+  try {
+    await api(`/api/jobs/${jobId}/retry`, { method: "POST" });
+    showToast("已重新排队", "info");
+    pollJob();
+  } catch (error) {
+    showToast(error.message, "error");
+  }
 }
 
 async function pollJob() {
@@ -830,6 +864,10 @@ async function pollJob() {
       showToast(job.error || "匹配任务失败", "error");
       return;
     }
+    if (job.status === "cancelled") {
+      showToast("匹配任务已取消", "info");
+      return;
+    }
     state.pollTimer = window.setTimeout(pollJob, 900);
   } catch (error) {
     showToast(error.message, "error");
@@ -846,7 +884,7 @@ async function openProject(jobId) {
     elements.projectDetailSearch.value = "";
     showView("projectView");
     renderProject(job);
-    if (!["completed", "failed"].includes(job.status)) pollJob();
+    if (!["completed", "failed", "cancelled"].includes(job.status)) pollJob();
   } catch (error) {
     showToast(error.message, "error");
   }
