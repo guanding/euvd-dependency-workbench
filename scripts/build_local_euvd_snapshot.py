@@ -20,6 +20,26 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
+# Consumer snapshot table allowlist. Only these tables from the formal mirror
+# are retained in the read-only Web snapshot. Any other table — notably the
+# independent Mirror tool's ``sbom_lookup_runs`` / ``sbom_lookup_results`` which
+# may hold customer SBOM audit data — is dropped and the database VACUUMed so
+# customer data cannot leak into the consumer snapshot (DEVELOPER_HANDOFF §4.3).
+# New mirror tables are excluded by default; keep this list minimal and deliberate.
+CONSUMER_TABLE_ALLOWLIST = frozenset(
+    {
+        "vulnerabilities",
+        "cve_euvd_mapping",
+        "known_exploited",
+        "known_exploited_sources",
+        "data_source_versions",
+        "sync_state",
+        "sync_runs",
+        "local_products",          # rebuilt below
+        "web_snapshot_metadata",   # rebuilt below
+    }
+)
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -164,6 +184,23 @@ def _build_snapshot(source: Path, output: Path, temporary: Path) -> dict[str, An
         if journal_mode.casefold() != "delete":
             raise ValueError(f"consumer snapshot journal_mode={journal_mode}, expected delete")
         database.execute("PRAGMA foreign_keys=ON")
+        # Drop every table not on the consumer allowlist before rebuilding the
+        # Web-specific tables. The SQLite backup copies the whole mirror, so
+        # without this the independent Mirror tool's customer-audit tables
+        # (sbom_lookup_runs / sbom_lookup_results) would ship in the consumer
+        # snapshot. See DEVELOPER_HANDOFF §4.3.
+        existing_tables = {
+            str(row[0])
+            for row in database.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            )
+        }
+        consumer_excluded_tables = sorted(
+            existing_tables - CONSUMER_TABLE_ALLOWLIST
+        )
+        for table in consumer_excluded_tables:
+            database.execute(f'DROP TABLE IF EXISTS "{table}"')
         database.execute("DROP TABLE IF EXISTS local_products")
         database.execute("DROP TABLE IF EXISTS web_snapshot_metadata")
         database.execute(
@@ -282,6 +319,8 @@ def _build_snapshot(source: Path, output: Path, temporary: Path) -> dict[str, An
             "consumer_boundary": (
                 "Read-only Web consumer snapshot; not the synchronization authority"
             ),
+            "consumer_table_allowlist": ",".join(sorted(CONSUMER_TABLE_ALLOWLIST)),
+            "consumer_excluded_tables": ",".join(consumer_excluded_tables),
         }
         database.executemany(
             "INSERT INTO web_snapshot_metadata(key, value) VALUES (?, ?)",
@@ -299,6 +338,13 @@ def _build_snapshot(source: Path, output: Path, temporary: Path) -> dict[str, An
         database.commit()
         if scalar(database, "PRAGMA quick_check") != "ok":
             raise ValueError("snapshot database quick_check failed after metadata seal")
+        # Physically purge pages of the dropped non-allowlist tables so customer
+        # audit data cannot linger in free pages of the snapshot file. DROP alone
+        # does not shrink the file; VACUUM rewrites it without the freed pages.
+        database.commit()
+        database.execute("VACUUM")
+        if scalar(database, "PRAGMA integrity_check") != "ok":
+            raise ValueError("snapshot integrity_check failed after VACUUM")
 
     unexpected_sidecars = [
         str(Path(str(temporary) + suffix))
@@ -364,6 +410,7 @@ def _build_snapshot(source: Path, output: Path, temporary: Path) -> dict[str, An
         "last_successful_to_date": metadata["last_successful_to_date"],
         "reference_data_freshness": metadata["reference_data_freshness"],
         "important_boundary": metadata["consumer_boundary"],
+        "consumer_excluded_tables": metadata["consumer_excluded_tables"],
     }
 
 
