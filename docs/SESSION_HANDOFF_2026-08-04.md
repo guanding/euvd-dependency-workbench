@@ -269,3 +269,25 @@ curl -fsS http://127.0.0.1:8090/api/health | python3 -m json.tool
 8. **多产品批量 + 客户案例库**：一次多 SBOM；`sbom_snapshots` 建历史判定案例库（同产品旧版判定 → 新版复用）。
 
 **决策**：1/2/3 已验证实现（见上）；后续按需做 4-8（VEX 草稿 / CI / 监控 / E2E / 批量）。
+
+---
+
+## 12. backlog 4-7 实现 sketch（2026-08-05 workflow survey，供新会话直接用）
+
+survey（4 agent 并行读代码）确认 4-7 **全部真实缺口**（`already_done: false`，非像 1/2/3 已实现）。详细实现路径已探明：
+
+### 4. VEX 草稿自动生成（medium）
+- **缺口**：匹配信号（`version_is_affected` / `component_applicability` / `affected_versions` / `match_reason`，matcher.py:1359-1375）已算但 `create_case_from_finding`（workflow_store.py:532-591）**丢弃**；`applicability_status/justification` 完全手填。
+- **实现**：(a) `app/vex_draft.py` `suggest_applicability(finding) -> (status, rationale)`：`component_applicability=="受影响版本条件命中"`→`known_affected`，否则 `under_investigation`；拼接 `affected_versions`+`match_reason`。(b) `create_case_from_finding` 持久化 finding 信号 + 未设置时调 suggest 预填（仍可 update_case 改）。(c) 批量 `POST /api/art14/jobs/{id}/vex/csaf` + `build_csaf_vex_multi`。
+
+### 5. CI（medium，需远端 push 前置）
+- **缺口**：零 CI 配置；**无 git remote**（两项目）；无 lint/test/scan 工具链。
+- **实现**：`.github/workflows/release.yml`（lint ruff/mypy + unit pytest + contract TestClient/schemathesis + e2e `docker compose up` + dep-scan pip-audit + image-scan trivy + SBOM cosign 签名）；`requirements-dev.txt`（pytest/ruff/mypy/pip-audit）；复用 `scripts/check_version_consistency.py` 作 pre-tag 门；复用 release-grade Dockerfile + syft sidecar。Mirror 轻量版（lint+test+audit+image）。**前置：用户 push 两项目到内部 GitLab/GitHub**。
+
+### 6. 监控告警（medium，orchestrator_available 误报已修 `f179e69`）
+- **缺口**：零主动告警（信号全有：sha 校验/sync-status/403 fail-fast/healthcheck，但被动 poll）。
+- **实现**：`Mirror/alert_watch.py`（~200 行，watch 容器或线程）：每 N 秒读 sync-status + `EuvdClient.local_snapshot_status()` + `backups/` mtime → 规则（403 持续/sha 失配/backup 缺失/ops 停/degraded 持续）→ sink（`ALERT_SINK={log,webhook,macos}`）。`Dockerfile.ops` 加 HEALTHCHECK（poll sync-status finished_at 新鲜）。compose env（ALERT_SINK/WEBHOOK_URL/POLL_INTERVAL/BACKUP_MAX_AGE_DAYS）。
+
+### 7. E2E + 故障注入（medium，~250 行）
+- **缺口**：无端到端（upload→parse→match→report→Art.14）；matcher 无故障注入（mirror 已有：lock/403/hash-mismatch/atomic rollback）。
+- **实现**：`tests/test_e2e_pipeline.py`：复用 `test_local_euvd.py` mini-DB fixture（EUVD-2024-1/CVE-2024-1000）+ `cyclonedx_payload`；happy path（**真 match_components 不 mock**，验 completed+report.xlsx+snapshot 注册）+ 故障（crash mid-run `fake raises` / snapshot sha 损坏 / `httpx.MockTransport` 500）。unittest 风格（不加 pytest 配置）。
