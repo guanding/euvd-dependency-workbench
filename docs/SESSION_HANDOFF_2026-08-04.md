@@ -11,7 +11,7 @@
 
 从一次 7 维度并行架构审查 Workflow 出发（6/7 维度成功，1 维度因 API 速率限制未完成），按优先级交付：客户数据外泄堵漏、双项目版本控制基线、版本号单一源、EUVD 目录列表/搜索（改进 1）、数据日期展示 + 按钮文案修正（改进 2a/Phase1）、CVE 匹配静默漏报修复、积极利用漏洞标注（CRA Art.3(42)）、403 fail-fast。
 
-**20 个 Web commit + 7 个 Mirror commit；Web 测试 40→96 项，Mirror 测试 17→42 项，全绿。**
+**32 个 Web commit + 7 个 Mirror commit；Web 测试 40→104 项，Mirror 测试 17→42 项，全绿。**
 
 ---
 
@@ -245,3 +245,27 @@ curl -fsS http://127.0.0.1:8090/api/health | python3 -m json.tool
 - **积极利用**：KEV∪exploitedSince（CRA Art.3(42) 输入，≠ reportable）
 
 **已知限制**：float 版本丢尾零（openpyxl 数字 cell 本质，1.10==1.1 float 不可恢复，见 §4/§6；客户模板版本列为文本格式，仅当操作员输数字才触发）。
+
+---
+
+## 11. 后续优化 backlog（2026-08-05 评估）
+
+系统作为本地 SBOM 漏洞工作台 + CRA Art.14 证据工具已完整（审查 64 发现基本清零、约束严守、Web 96 + Mirror 42 测试全绿）。以下为增量，按优先级：
+
+### 高优先级（匹配精确性 + 合规时效）— ✅ 2026-08-05 验证：均已实现
+1. **EUVD 版本范围解析**（`matcher.py version_is_affected:224`）：✅ 已实现（解析 `<=/>=/through/<`、`all`/`*`、精确、范围；返回 None 才标人工）。本次补 4 个边界测试（range/`>=`/all/精确）。
+2. **CPE 2.3 解析**（`matcher.py parse_cpe:141` + `enrich_component:155`）：✅ 已实现（vendor/name/version 解析并回填组件身份用于匹配；EUVD 产品无独立 CPE 字段，无法做字段直接对照）。本次补 4 个测试。
+3. **CRA Art.14 时钟**（`art14.py deadline_status:25` + 前端 `renderArt14Case caseDeadlineStrip`）：✅ 已实现（24h/72h/14d 倒计时 + overdue/open tone）。
+
+> 教训：建议前应先读代码验证现状——1/2/3 实际已实现，本次仅补测试覆盖（commit `78471b9`，Web 96→104）。
+
+### 中优先级（合规产出 + 运营）
+4. **VEX 导出草稿自动生成**：基于匹配结果 + 人工适用性判定 → CSAF VEX 草稿（affected/not_affected + rationale）。闭环"评估→产出 VEX 给下游"。
+5. **远端仓库 + CI**（D3）：双项目 Git 基线未 push。建内部 GitLab + CI（lint/test/E2E/image scan/SBOM 签名）。
+6. **监控告警**：403 持久 / 快照 sha 失配 / 备份缺失 → 主动提示。
+
+### 低优先级（规模/质量）
+7. **E2E 测试 + 故障注入**：单元测试强，缺端到端 + 故障注入（同步失败/快照损坏/网络断）。
+8. **多产品批量 + 客户案例库**：一次多 SBOM；`sbom_snapshots` 建历史判定案例库（同产品旧版判定 → 新版复用）。
+
+**决策**：先做 1+2+3（匹配质量核心 + 合规时效，现有架构内，不引入新依赖）。
