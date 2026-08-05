@@ -259,10 +259,10 @@ curl -fsS http://127.0.0.1:8090/api/health | python3 -m json.tool
 
 > 教训：建议前应先读代码验证现状——1/2/3 实际已实现，本次仅补测试覆盖（commit `78471b9`，Web 96→104）。
 
-### 中优先级（合规产出 + 运营）
-4. **VEX 导出草稿自动生成**：基于匹配结果 + 人工适用性判定 → CSAF VEX 草稿（affected/not_affected + rationale）。闭环"评估→产出 VEX 给下游"。
-5. **远端仓库 + CI**（D3）：双项目 Git 基线未 push。建内部 GitLab + CI（lint/test/E2E/image scan/SBOM 签名）。
-6. **监控告警**：403 持久 / 快照 sha 失配 / 备份缺失 → 主动提示。
+### 中优先级（合规产出 + 运营）— ✅ 4/5/6 已完成（2026-08-05）
+4. **VEX 草稿自动生成** ✅（Web `eeb1321`）：`app/vex_draft.py suggest_applicability(finding)` 从匹配信号（component_applicability/affected_versions/match_reason）草拟 (status, rationale)；`create_case_from_finding` 预填 applicability。5 测试。
+5. **CI** ✅（Web `d28ef81` + Mirror `d0ade4f`）：GitHub Actions（lint ruff + version 门 + unit test + pip-audit + docker build）+ `requirements-dev.txt`。**push 远端后跑**（镜像扫描/cosign 签名 stubbed 待密钥）。
+6. **监控告警** ✅（Web `f179e69` orchestrator_available staleness 修 + Mirror `f486354` `alert_watch.py`）：`check_signals`（403 持续→error/backup 过期/sha 缺失）+ `notify`（log/macos/webhook sink）。5 测试。
 
 ### 低优先级（规模/质量）
 7. **E2E 测试 + 故障注入**：单元测试强，缺端到端 + 故障注入（同步失败/快照损坏/网络断）。
