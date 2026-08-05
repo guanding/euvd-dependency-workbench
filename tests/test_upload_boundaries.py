@@ -4,7 +4,9 @@ import asyncio
 import io
 import hashlib
 import json
+import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -87,6 +89,31 @@ class UploadBoundaryTests(unittest.TestCase):
                 self._upload(cyclonedx_payload(3))
         self.assertEqual(caught.exception.status_code, 413)
         self.assertEqual(list(self.upload_dir.iterdir()), [])
+
+    def test_purge_old_uploads_respects_dry_run_and_disabled(self) -> None:
+        from app.main import _purge_old_uploads
+
+        old = self.upload_dir / "old.json"
+        old.write_text("x")
+        past = time.time() - 10 * 24 * 3600
+        os.utime(old, (past, past))
+        new = self.upload_dir / "new.json"
+        new.write_text("x")
+        # dry_run reports the old file but deletes nothing
+        self.assertEqual(
+            _purge_old_uploads(self.upload_dir, 7, dry_run=True), ["old.json"]
+        )
+        self.assertTrue(old.exists())
+        # real run deletes old, keeps new
+        _purge_old_uploads(self.upload_dir, 7, dry_run=False)
+        self.assertFalse(old.exists())
+        self.assertTrue(new.exists())
+        # purge_days<=0 disables purging entirely
+        new2 = self.upload_dir / "new2.json"
+        new2.write_text("x")
+        os.utime(new2, (past, past))
+        self.assertEqual(_purge_old_uploads(self.upload_dir, 0), [])
+        self.assertTrue(new2.exists())
 
 
 if __name__ == "__main__":

@@ -1481,13 +1481,38 @@ async def download_template() -> FileResponse:
     )
 
 
+def _purge_old_uploads(
+    upload_dir: Path, purge_days: int, dry_run: bool = False
+) -> list[str]:
+    """Delete uploads older than purge_days. Returns the names of files older
+    than the cutoff (deleted unless dry_run). purge_days<=0 disables. Extracted
+    from the startup hook so it is unit-testable (审查中危: 原 startup 删 7 天
+    上传无 dry-run, 静默删)."""
+    if purge_days <= 0:
+        return []
+    cutoff = datetime.now().timestamp() - purge_days * 24 * 3600
+    purged: list[str] = []
+    for path in upload_dir.iterdir():
+        if path.is_file() and path.stat().st_mtime < cutoff:
+            purged.append(path.name)
+            if not dry_run:
+                path.unlink(missing_ok=True)
+    return purged
+
+
 @app.on_event("startup")
 async def cleanup_old_uploads() -> None:
     global _feed_refresh_task
-    cutoff = datetime.now().timestamp() - 7 * 24 * 3600
-    for path in UPLOAD_DIR.iterdir():
-        if path.is_file() and path.stat().st_mtime < cutoff:
-            path.unlink(missing_ok=True)
+    purge_days = int(os.getenv("STARTUP_PURGE_DAYS", "7"))
+    dry_run = os.getenv("STARTUP_PURGE_DRY_RUN", "") == "1"
+    purged = _purge_old_uploads(UPLOAD_DIR, purge_days, dry_run)
+    if purged:
+        print(
+            f"[startup] purge {len(purged)} upload(s) older than {purge_days} "
+            f"day(s) (dry_run={dry_run}): {', '.join(purged[:10])}"
+            f"{' ...' if len(purged) > 10 else ''}",
+            flush=True,
+        )
     for job_path in JOB_DIR.glob("*.json"):
         try:
             job = _read_json(job_path)
