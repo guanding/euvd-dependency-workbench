@@ -240,6 +240,10 @@ def _extract_metadata_binding(workbook: Any) -> dict[str, Any] | None:
     }
 
 
+# Resource bounds: cap untrusted parsing to prevent OOM on crafted inputs.
+_MAX_PARSE_ROWS_PER_SHEET = 200_000
+_MAX_VULNERABILITIES = 50_000
+
 _ILLEGAL_XML_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
@@ -309,7 +313,11 @@ def _read_xlsx(path: Path) -> dict[str, Any]:
             sheet for sheet in workbook.worksheets if sheet.sheet_state == "visible"
         ] or [workbook.active]
         for order, worksheet in enumerate(visible_sheets):
-            sheet_rows = [list(row) for row in worksheet.iter_rows(values_only=True)]
+            sheet_rows: list[list[Any]] = []
+            for row in worksheet.iter_rows(values_only=True):
+                sheet_rows.append(list(row))
+                if len(sheet_rows) >= _MAX_PARSE_ROWS_PER_SHEET:
+                    break
             if not sheet_rows:
                 continue
             sheet_header_index = _find_header_row(sheet_rows)
@@ -449,6 +457,12 @@ def _read_cyclonedx(path: Path) -> dict[str, Any]:
     if not isinstance(vulnerabilities, list):
         warnings.append("CycloneDX vulnerabilities 不是数组，已跳过漏洞关联解析")
         vulnerabilities = []
+    if len(vulnerabilities) > _MAX_VULNERABILITIES:
+        warnings.append(
+            f"CycloneDX vulnerabilities 超过解析上限 {_MAX_VULNERABILITIES}，"
+            f"已截断前 {_MAX_VULNERABILITIES} 条"
+        )
+        vulnerabilities = vulnerabilities[:_MAX_VULNERABILITIES]
     component_refs = {
         repair_text(component.get("bom-ref"))
         for component in flattened_components

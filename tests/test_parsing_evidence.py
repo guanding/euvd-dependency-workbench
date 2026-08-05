@@ -10,11 +10,16 @@ Findings (adversarially confirmed, high confidence):
 
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from openpyxl import Workbook
 
-from app.spreadsheet_io import _safe_cell, _write_rows
+from app import spreadsheet_io
+from app.spreadsheet_io import _safe_cell, _write_rows, read_sbom
 
 
 class ParsingEvidenceP0Tests(unittest.TestCase):
@@ -42,6 +47,49 @@ class ParsingEvidenceP0Tests(unittest.TestCase):
             "header became a formula — csv-injection not sanitized",
         )
         self.assertTrue(str(header_cell.value).startswith("'"))
+
+
+class ParsingEvidenceP1Tests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self._tmp.name)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_xlsx_row_cap_truncates_huge_sheet(self) -> None:
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "S"
+        ws.append(["组件名称"])
+        for i in range(10):
+            ws.append([f"c{i}"])
+        path = self.dir / "big.xlsx"
+        wb.save(path)
+        with patch.object(spreadsheet_io, "_MAX_PARSE_ROWS_PER_SHEET", 5):
+            parsed = read_sbom(path)
+        self.assertLessEqual(len(parsed["rows"]), 5)
+
+    def test_cyclonedx_vulnerabilities_cap(self) -> None:
+        payload = {
+            "bomFormat": "CycloneDX",
+            "specVersion": "1.6",
+            "version": 1,
+            "components": [
+                {"type": "library", "name": "x", "version": "1", "bom-ref": "x"}
+            ],
+            "vulnerabilities": [
+                {"id": f"CVE-2026-{i}", "affects": [{"ref": "x"}]} for i in range(10)
+            ],
+        }
+        path = self.dir / "v.cdx.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        with patch.object(spreadsheet_io, "_MAX_VULNERABILITIES", 3):
+            parsed = read_sbom(path)
+        self.assertTrue(
+            any("截断" in w for w in parsed.get("warnings", [])),
+            f"expected truncation warning, got {parsed.get('warnings')}",
+        )
 
 
 if __name__ == "__main__":
