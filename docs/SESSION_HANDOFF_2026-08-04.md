@@ -11,7 +11,7 @@
 
 从一次 7 维度并行架构审查 Workflow 出发（6/7 维度成功，1 维度因 API 速率限制未完成），按优先级交付：客户数据外泄堵漏、双项目版本控制基线、版本号单一源、EUVD 目录列表/搜索（改进 1）、数据日期展示 + 按钮文案修正（改进 2a/Phase1）、CVE 匹配静默漏报修复、积极利用漏洞标注（CRA Art.3(42)）、403 fail-fast。
 
-**13 个 Web commit + 6 个 Mirror commit；Web 测试 40→79 项，Mirror 测试 17→42 项，全绿。**
+**14 个 Web commit + 6 个 Mirror commit；Web 测试 40→83 项，Mirror 测试 17→42 项，全绿。**
 
 ---
 
@@ -76,8 +76,8 @@
 | HIGH | 零 Git 无 .gitignore | 双项目 | ✅ Git 基线 |
 | HIGH | 版本号散落致漂移 | APP_VERSION/docker tag/README | ✅ 单一源+校验门 |
 | HIGH | CVE 精确优先漏报 | matcher.py:1442 (match_components) | ✅ 优先+兜底 |
-| HIGH | awareness 可被覆盖（approved/submitted 案件） | workflow_store.py:831 | ⏳ 第七步 |
-| HIGH | stale 重开不区分 customer | workflow_store.py:474 | ⏳ 第七步 |
+| HIGH | awareness 可被覆盖（approved/submitted 案件） | workflow_store.py confirm_awareness | ✅ 第七步 终态锁定 |
+| HIGH | stale 重开不区分 customer | workflow_store.py register_sbom_snapshot | ✅ 第七步 按 customer 隔离 |
 | 中危 | 无跨进程 advisory lock | euvd_sync.py MirrorStore | ✅ 4-3 exclusive_lock |
 | 中危 | 403 重试 9 分钟 | euvd_sync.py EuvdClient | ✅ fail-fast |
 | 中危 | bootstrap 全量回滚 | euvd_sync.py main | ✅ 4-2 状态机 |
@@ -85,7 +85,7 @@
 | 中危 | JSON 任务与 SQLite 非原子 | main.py:440 | ⏳ D2 |
 | 中危 | startup 删 7 天上传无 dry-run | main.py:1276 | ⏳ D2 |
 | 中危 | 无 schema migration | euvd_sync.py:274 | ⏳ D1/D3 |
-| 中危 | audit 无 hash chain | workflow_store.py:229 | ⏳ 第七步 |
+| 中危 | audit 无 hash chain | workflow_store.py _audit | ✅ 第七步 prev_hash 链 |
 
 > **未完成审查维度**：parsing-evidence（表格解析/PRE-7）因 API 速率限制 429 未跑。该层是客户手写 Excel 的核心输入路径，建议下次单独补审（公式注入防护、脏数据容错、Metadata 绑定）。
 
@@ -141,7 +141,7 @@ curl -fsS http://127.0.0.1:8090/api/health  # snapshot_sha256 一致
 ### 后续步骤（设计文档 D1-D4 + 审查剩余）
 - **第五步** — ✅ 已完成（2026-08-04 续做，commit `da73ca5` D1 + `f51b5ef` D2，Web 测试 65→79）：D1 `01_Metadata_元数据` sheet → product 身份绑定（预填可改 + hardware_revision/release_date/sbom_version 证据）；D2 BackgroundTasks 增强（`uuid5` 幂等键 / `POST /cancel` + `/retry` / `_write_json(completed)` 先于 `register_snapshot` 的原子顺序修复 + startup reconcile 兜底 / 前端取消·重试按钮）。下方原设计描述保留。
 - **第六步** — ✅ 已完成（2026-08-05，Mirror `5acec78` mirror_ops.py + Web `388d47d` API/前端）：真正"一键更新 EUVD"——`mirror_ops.py`（run/watch）acquire `exclusive_lock` → euvd_sync incremental+reference-data → build_local_euvd_snapshot → 写 `sync-status.json`；Web `POST /sync-request`（信号文件，running 时 409）+ `GET /sync-status`（轮询）；前端按钮"一键更新 EUVD" + 阶段显示。严守约束#3（Web 不写 Mirror，只发信号）。下方原设计保留。
-- **第七步**：工作流安全门（awareness 覆盖防护 workflow_store.py:831；stale 重开按 customer 隔离 :474；audit hash chain）
+- **第七步** — ✅ 已完成（2026-08-05，commit `f1e095b`）：awareness 终态锁定 + stale 按 customer 隔离 + audit hash chain（prev_hash 链，`_ensure_column` 幂等 migration 已在线上 workbench 生效）。下方原设计保留。
 - **D3**：工程化发布（CI lint/unit/contract/E2E/dep scan/image scan；签名 SBOM+provenance；性能/故障注入测试）
 - **补审**：parsing-evidence 维度（429 未完成）
 
