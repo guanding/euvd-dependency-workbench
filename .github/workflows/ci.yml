@@ -1,0 +1,43 @@
+name: CI
+
+# Backlog 5: release-engineering CI gate. Runs on push/PR once a remote exists.
+# Reuses scripts/check_version_consistency.py (version single-source gate) and
+# the unittest suite (DATA_DIR/EUVD_LOCAL_DB env mirrors the local runbook).
+# Image scan + SBOM signing (cosign) are stubbed as noted — add keys/OIDC when
+# the remote is provisioned. Mirror project has a lighter workflow of its own.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Version consistency gate (APP_VERSION == compose tag)
+        run: python scripts/check_version_consistency.py --no-health
+      - name: Lint (ruff)
+        run: ruff check app tests scripts
+      - name: Unit tests
+        run: |
+          handoff="$(mktemp -d)"
+          DATA_DIR="$handoff/data" OUTPUT_DIR="$handoff/outputs" \
+          EUVD_LOCAL_DB="$PWD/data/euvd-readonly.sqlite3" \
+          EUVD_LOCAL_DB_SHA256_FILE="$PWD/data/euvd-readonly.sqlite3.sha256" \
+          PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tests
+          rm -rf "$handoff"
+      - name: Dependency scan (pip-audit)
+        run: pip-audit -r requirements.txt
+      - name: Image build (release-grade Dockerfile)
+        run: docker build -t euvd-dependency-workbench:ci .
+      # TODO when remote + signing keys provisioned:
+      #  - trivy image euvd-dependency-workbench:ci
+      #  - python scripts/generate_sbom.py  (syft sidecar -> SPDX/CycloneDX)
+      #  - cosign sign --keyless euvd-dependency-workbench:ci  (OIDC on GH Actions)
