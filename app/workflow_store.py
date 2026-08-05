@@ -233,6 +233,7 @@ class WorkflowStore:
                     actor TEXT NOT NULL,
                     payload_json TEXT NOT NULL,
                     payload_sha256 TEXT NOT NULL,
+                    prev_hash TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL
                 );
 
@@ -264,6 +265,10 @@ class WorkflowStore:
                 CREATE INDEX IF NOT EXISTS idx_evidence_case ON evidence(case_id);
                 CREATE INDEX IF NOT EXISTS idx_audit_case ON audit_events(case_id);
                 """
+            )
+            # Migration: existing databases predate the audit hash-chain column.
+            self._ensure_column(
+                connection, "audit_events", "prev_hash", "TEXT NOT NULL DEFAULT ''"
             )
             connection.execute(
                 "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(2, ?)",
@@ -300,6 +305,20 @@ class WorkflowStore:
                         f"ALTER TABLE evidence ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0"
                     )
 
+    @staticmethod
+    def _ensure_column(
+        connection: sqlite3.Connection, table: str, column: str, definition: str
+    ) -> None:
+        """Add a column if missing (idempotent migration for existing DBs)."""
+        existing = {
+            str(row[1])
+            for row in connection.execute(f"PRAGMA table_info({table})")
+        }
+        if column not in existing:
+            connection.execute(
+                f"ALTER TABLE {table} ADD COLUMN {column} {definition}"
+            )
+
     def _audit(
         self,
         connection: sqlite3.Connection,
@@ -309,18 +328,30 @@ class WorkflowStore:
         payload: dict[str, Any],
     ) -> None:
         serialized = _json(payload)
+        # Hash chain: each event's digest binds the previous event's digest (by
+        # insertion order, across all cases), so a deleted/reordered/tampered
+        # audit row breaks end-to-end verification.
+        previous = connection.execute(
+            "SELECT payload_sha256 FROM audit_events ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        prev_hash = str(previous["payload_sha256"]) if previous else ""
+        digest = hashlib.sha256(
+            f"{prev_hash}:{serialized}".encode("utf-8")
+        ).hexdigest()
         connection.execute(
             """
             INSERT INTO audit_events(
-                case_id, event_type, actor, payload_json, payload_sha256, created_at
-            ) VALUES(?, ?, ?, ?, ?, ?)
+                case_id, event_type, actor, payload_json, payload_sha256,
+                prev_hash, created_at
+            ) VALUES(?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 case_id,
                 event_type,
                 actor.strip() or "system",
                 serialized,
-                hashlib.sha256(serialized.encode("utf-8")).hexdigest(),
+                digest,
+                prev_hash,
                 utc_now(),
             ),
         )
@@ -428,6 +459,7 @@ class WorkflowStore:
         product_name = str(job.get("project_name") or job.get("file_name") or "SBOM")
         product_version = str(job.get("project_version") or "")
         software_build = str(job.get("software_build") or "")
+        customer = str(job.get("customer") or "")
         with self.connect() as connection:
             connection.execute(
                 """
@@ -452,7 +484,7 @@ class WorkflowStore:
                     product_name,
                     product_version,
                     software_build,
-                    str(job.get("customer") or ""),
+                    customer,
                     str(job.get("file_name") or ""),
                     source_sha256,
                     sbom_format,
@@ -471,7 +503,7 @@ class WorkflowStore:
                     compliance_reviewer = '', compliance_reviewed_at = NULL,
                     compliance_decision = '', compliance_rationale = '',
                     approved_at = NULL, updated_at = ?
-                WHERE project_name = ? AND sbom_snapshot_id <> ?
+                WHERE project_name = ? AND customer = ? AND sbom_snapshot_id <> ?
                   AND workflow_status NOT IN ('submitted', 'closed')
                   AND stale_reason = ''
                   AND EXISTS (
@@ -488,6 +520,7 @@ class WorkflowStore:
                     "产品版本、build 或 SBOM hash/总体发生变化；适用性、VEX 和未提交审批已重开",
                     utc_now(),
                     product_name,
+                    customer,
                     snapshot_id,
                     product_version,
                     software_build,
@@ -852,6 +885,10 @@ class WorkflowStore:
         if not evidence_refs:
             raise ValueError("awareness 必须绑定至少一条案件证据")
         case = self.get_case(case_id)
+        if case.get("workflow_status") in {"approved", "submitted", "closed"}:
+            raise ValueError(
+                f"案件已{case['workflow_status']}，awareness 不可重新确认；如需修正请先重开案件"
+            )
         if not case.get("initial_assessment_completed_at"):
             raise ValueError("必须先记录初步评估完成时间")
         with self.connect() as connection:
