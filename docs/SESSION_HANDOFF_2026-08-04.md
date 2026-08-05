@@ -11,7 +11,7 @@
 
 从一次 7 维度并行架构审查 Workflow 出发（6/7 维度成功，1 维度因 API 速率限制未完成），按优先级交付：客户数据外泄堵漏、双项目版本控制基线、版本号单一源、EUVD 目录列表/搜索（改进 1）、数据日期展示 + 按钮文案修正（改进 2a/Phase1）、CVE 匹配静默漏报修复、积极利用漏洞标注（CRA Art.3(42)）、403 fail-fast。
 
-**14 个 Web commit + 6 个 Mirror commit；Web 测试 40→83 项，Mirror 测试 17→42 项，全绿。**
+**18 个 Web commit + 6 个 Mirror commit；Web 测试 40→92 项，Mirror 测试 17→42 项，全绿。**
 
 ---
 
