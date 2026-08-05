@@ -9,6 +9,8 @@ import sqlite3
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
+
+from .vex_draft import suggest_applicability
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -543,6 +545,7 @@ class WorkflowStore:
         case_id = str(uuid.uuid5(uuid.NAMESPACE_URL, source_key))
         snapshot_id = self.register_sbom_snapshot(job)
         now = utc_now()
+        suggested_status, suggested_justification = suggest_applicability(finding)
         with self.connect() as connection:
             connection.execute(
                 """
@@ -551,8 +554,10 @@ class WorkflowStore:
                     project_version, software_build, customer, sbom_snapshot_id,
                     sbom_sha256, component_name, component_version, cve_id, euvd_id,
                     public_exploitation_status, public_evidence_checked_at,
-                    public_evidence_sha256, external_signal_at, created_at, updated_at
-                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    public_evidence_sha256, external_signal_at,
+                    applicability_status, applicability_justification,
+                    created_at, updated_at
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     case_id,
@@ -573,6 +578,8 @@ class WorkflowStore:
                     str(finding.get("evidence_checked_at") or ""),
                     str(finding.get("kev_snapshot_sha256") or ""),
                     str(finding.get("kev_date_added") or "") or None,
+                    suggested_status,
+                    suggested_justification,
                     now,
                     now,
                 ),
