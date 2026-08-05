@@ -240,12 +240,19 @@ def _extract_metadata_binding(workbook: Any) -> dict[str, Any] | None:
     }
 
 
+_ILLEGAL_XML_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
 def _safe_cell(value: Any) -> Any:
     if value is None:
         return ""
     if isinstance(value, (int, float, bool, datetime)):
         return value
     text = repair_text(value)
+    # Strip XML-illegal control characters (NUL, 0x01-0x08, 0x0B, 0x0C, 0x0E-0x1F).
+    # openpyxl raises IllegalCharacterError on them, which would abort the whole
+    # report write after the long match run has already completed.
+    text = _ILLEGAL_XML_CONTROL_RE.sub("", text)
     if text.startswith(("=", "+", "-", "@")):
         return "'" + text
     return text
@@ -647,7 +654,10 @@ def _fit_columns(worksheet: Any, max_width: int = 52) -> None:
 
 
 def _write_rows(worksheet: Any, headers: list[str], rows: list[dict[str, Any]]) -> None:
-    worksheet.append(headers)
+    # Sanitize headers too (not just body cells): customer-controlled CSV/XLSX
+    # headers reach the 输入SBOM快照 sheet and a '=' prefix would become a live
+    # formula in the report (csv-injection).
+    worksheet.append([_safe_cell(header) for header in headers])
     _style_header(list(worksheet[1]))
     for row in rows:
         worksheet.append([_safe_cell(row.get(header, "")) for header in headers])
