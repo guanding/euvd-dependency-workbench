@@ -92,5 +92,20 @@ class ParsingEvidenceP1Tests(unittest.TestCase):
         )
 
 
+class ParsingEvidenceP2AliasTests(unittest.TestCase):
+    def test_metadata_label_exact_match_avoids_overmatch(self) -> None:
+        from app.spreadsheet_io import _match_metadata_label
+
+        # substring over-match regressions (finding 10/16)
+        self.assertIsNone(_match_metadata_label("Hardware Build ID"))
+        self.assertIsNone(_match_metadata_label("productnamespace"))
+        self.assertIsNone(_match_metadata_label("Build Identifier Report"))
+        # template/zh-en labels still resolve exactly
+        self.assertEqual(_match_metadata_label("Build ID 构建号"), "software_build")
+        self.assertEqual(_match_metadata_label("产品名称"), "product_name")
+        self.assertEqual(_match_metadata_label("Product name"), "product_name")
+        self.assertEqual(_match_metadata_label("Product version 产品版本"), "product_version")
+
+
 if __name__ == "__main__":
     unittest.main()

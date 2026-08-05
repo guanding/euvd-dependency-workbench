@@ -167,8 +167,12 @@ def _match_metadata_label(label: Any) -> str | None:
         return None
     for field, aliases in METADATA_LABEL_ALIASES.items():
         for alias in aliases:
-            normalized_alias = normalize_key(alias)
-            if normalized_alias and normalized_alias in text:
+            # Exact match on the normalized label/alias. A substring test
+            # over-matched (e.g. "Hardware Build ID" -> build id ->
+            # software_build; "productnamespace" -> productname). A customer who
+            # varies the label wording should add it to METADATA_LABEL_ALIASES
+            # deliberately rather than rely on loose substring matching.
+            if normalize_key(alias) == text:
                 return field
     return None
 
