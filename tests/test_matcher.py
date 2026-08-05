@@ -12,6 +12,7 @@ from app.matcher import (
     evaluate_identifier_item,
     evaluate_item,
     extract_identifiers,
+    parse_cpe,
     token_similarity,
     version_is_affected,
 )
@@ -62,6 +63,50 @@ class VersionMatchingTests(unittest.TestCase):
 
     def test_unstructured_expression_requires_review(self) -> None:
         self.assertIsNone(version_is_affected("1.0", "selected legacy releases")[0])
+
+    def test_inclusive_range_through(self) -> None:
+        self.assertTrue(version_is_affected("2.0", "1.0 through 3.0")[0])
+        self.assertFalse(version_is_affected("4.0", "1.0 through 3.0")[0])
+
+    def test_inclusive_lower_bound(self) -> None:
+        self.assertTrue(version_is_affected("3.5", ">=3.0")[0])
+        self.assertFalse(version_is_affected("2.9", ">=3.0")[0])
+
+    def test_all_versions_marker(self) -> None:
+        self.assertTrue(version_is_affected("1.0", "all versions")[0])
+        self.assertTrue(version_is_affected("9.9", "*")[0])
+
+    def test_exact_version(self) -> None:
+        self.assertTrue(version_is_affected("2.3.1", "2.3.1")[0])
+        self.assertFalse(version_is_affected("2.3.2", "2.3.1")[0])
+
+
+class CpeParsingTests(unittest.TestCase):
+    def test_parse_well_formed_cpe_23(self) -> None:
+        parsed = parse_cpe("cpe:2.3:a:apache:log4j:2.14.1:*:*:*:*:*:*:*")
+        self.assertEqual(parsed["vendor"], "apache")
+        self.assertEqual(parsed["name"], "log4j")
+        self.assertEqual(parsed["version"], "2.14.1")
+
+    def test_underscore_decoded_as_space(self) -> None:
+        parsed = parse_cpe(
+            "cpe:2.3:a:python_software_foundation:python:3.10:*:*:*:*:*:*:*"
+        )
+        self.assertEqual(parsed["vendor"], "python software foundation")
+        self.assertEqual(parsed["name"], "python")
+
+    def test_wildcard_or_dash_version_is_blank(self) -> None:
+        self.assertEqual(
+            parse_cpe("cpe:2.3:a:vendor:product:*:*:*:*:*:*:*:*")["version"], ""
+        )
+        self.assertEqual(
+            parse_cpe("cpe:2.3:a:vendor:product:-:*:*:*:*:*:*:*")["version"], ""
+        )
+
+    def test_non_cpe_string_returns_empty(self) -> None:
+        self.assertEqual(
+            parse_cpe("not a cpe"), {"name": "", "version": "", "vendor": ""}
+        )
 
 
 class ItemEvaluationTests(unittest.TestCase):
