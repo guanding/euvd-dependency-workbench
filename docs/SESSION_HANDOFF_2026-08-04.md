@@ -215,3 +215,33 @@ curl -fsS http://127.0.0.1:8090/api/health | python3 -m json.tool
 3. **allowlist 改动必须重建快照才实战生效**（§5.1），否则线上快照仍含客户审计表。
 4. **403 当前持续**：数据停留在 2026-07-28，这是 ENISA 出口受限，不是代码 bug；修复合法访问条件或接受 LKG。
 5. **积极利用 ≠ 自动 reportable**：`actively_exploited` 是公开利用信号（CRA Art.3(42) 的输入），产品级 reportable 判定仍需 awareness + 证据 + 四眼（系统不自动判）。
+
+---
+
+## 10. 附录：输入鲁棒性与有限结论边界
+
+**设计意图**：系统对非模板 / 内容不全的输入是"宽容到报错、严格不误导"——能给的部分如实给并标置信度；给不了的部分明确报错或标"需复核/人工"，绝不静默产出错误结论。用户文档见 `HUMAN_OPERATION_GUIDE_v2.3.md` §3.4。
+
+**输入路径鲁棒性矩阵**（`app/spreadsheet_io.py`）：
+
+| 路径 | 解析入口 | 鲁棒性 |
+|---|---|---|
+| CycloneDX JSON | `_read_cyclonedx`（`bomFormat`+`components`） | 最强：标准格式，无模板依赖，`purl`/`cpe`/`vulnerabilities`+PRE-7 元数据证据全保留 |
+| 模板 xlsx | `_read_xlsx` 选最优 sheet + D1 `_extract_metadata_binding` | 组件匹配 + 产品身份自动绑定 |
+| 任意 xlsx/csv | `_read_xlsx`/`_read_csv`（`infer_mapping` 中英文别名匹配 header，选 populated 列） | 组件匹配仍工作；产品身份需操作员手填（D1 元数据页绑定丢失） |
+| 无组件列 | `build_components` `raise` | 报错（约束#12 保留失败证据，非静默失败） |
+
+**关键解析行为**（parsing-evidence 补审后的现状）：
+- `_read_xlsx` sheet 评分 `populated_identity_rows` 优先（空模板 sheet 不会击败有数据 sheet）
+- `_find_header_row` 扫 50 行（长封面后的 header 仍可识别）+ name-alias bonus +1（数据行不会误判为 header）
+- `infer_mapping` 选 populated 列（空模板列不会被误映射）
+- `_decode_csv` 用 charset_normalizer（cp1252 `Müller` 不再被 gb18030 误解码）
+- ragged CSV 行多出的列保留为 `extra_N`（不静默截断）
+
+**有限结论的语义分层**（约束#5/#6/#7）：
+- **EUVD 精确匹配**：CVE/EUVD 直接映射（高置信）
+- **产品候选匹配**：name/version 模糊，标"需复核"（约束#6：产品模糊只产候选）
+- **未发现 EUVD 记录**：明确写"不是无漏洞声明"（约束#5：未命中≠不存在）
+- **积极利用**：KEV∪exploitedSince（CRA Art.3(42) 输入，≠ reportable）
+
+**已知限制**：float 版本丢尾零（openpyxl 数字 cell 本质，1.10==1.1 float 不可恢复，见 §4/§6；客户模板版本列为文本格式，仅当操作员输数字才触发）。
