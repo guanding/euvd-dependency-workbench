@@ -87,7 +87,7 @@
 | 中危 | 无 schema migration | euvd_sync.py:274 | ⏳ D1/D3 |
 | 中危 | audit 无 hash chain | workflow_store.py _audit | ✅ 第七步 prev_hash 链 |
 
-> **未完成审查维度**：parsing-evidence（表格解析/PRE-7）因 API 速率限制 429 未跑。该层是客户手写 Excel 的核心输入路径，建议下次单独补审（公式注入防护、脏数据容错、Metadata 绑定）。
+> **parsing-evidence 维度** — ✅ 已补审（2026-08-05，workflow 7 维审查 22 raw→16 confirmed，修 9/16；见 §6 路线图）。剩 5 项（gb18030 编码/float 版本/sheet 评分/scan cap）高复杂或低价值，记录待后续。
 
 ---
 
@@ -143,7 +143,7 @@ curl -fsS http://127.0.0.1:8090/api/health  # snapshot_sha256 一致
 - **第六步** — ✅ 已完成（2026-08-05，Mirror `5acec78` mirror_ops.py + Web `388d47d` API/前端）：真正"一键更新 EUVD"——`mirror_ops.py`（run/watch）acquire `exclusive_lock` → euvd_sync incremental+reference-data → build_local_euvd_snapshot → 写 `sync-status.json`；Web `POST /sync-request`（信号文件，running 时 409）+ `GET /sync-status`（轮询）；前端按钮"一键更新 EUVD" + 阶段显示。严守约束#3（Web 不写 Mirror，只发信号）。下方原设计保留。
 - **第七步** — ✅ 已完成（2026-08-05，commit `f1e095b`）：awareness 终态锁定 + stale 按 customer 隔离 + audit hash chain（prev_hash 链，`_ensure_column` 幂等 migration 已在线上 workbench 生效）。下方原设计保留。
 - **D3**：工程化发布（CI lint/unit/contract/E2E/dep scan/image scan；签名 SBOM+provenance；性能/故障注入测试）
-- **补审**：parsing-evidence 维度（429 未完成）
+- **parsing-evidence 补审** — ✅ 完成（修 9/16，剩 5 项高复杂/低价值待后续；详见 memory）
 
 ---
 
