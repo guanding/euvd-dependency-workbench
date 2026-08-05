@@ -146,5 +146,39 @@ class ParsingEvidenceP2ParseTests(unittest.TestCase):
         self.assertIn("extra_1", parsed["headers"])
 
 
+class ParsingEvidenceP2RemainingTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self._tmp.name)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_find_header_row_scans_past_20_rows(self) -> None:
+        from app.spreadsheet_io import _find_header_row
+
+        rows = [["noise"] for _ in range(25)] + [["组件名称", "版本"], ["openssl", "1.0"]]
+        self.assertEqual(_find_header_row(rows), 25)
+
+    def test_decode_csv_cp1252_not_misread_as_gb18030(self) -> None:
+        path = self.dir / "cp1252.csv"
+        path.write_bytes("name,vendor\nopenssl,M\xfcller\n".encode("cp1252"))
+        text = spreadsheet_io._decode_csv(path)
+        self.assertIn("Müller", text)
+
+    def test_read_xlsx_prefers_populated_sheet_over_empty_template(self) -> None:
+        wb = Workbook()
+        empty = wb.active
+        empty.title = "Template"
+        empty.append(["组件名称", "版本", "PURL", "CPE", "CVE", "EUVD ID"])  # all aliases, no data
+        full = wb.create_sheet("Real")
+        full.append(["组件名称", "版本"])
+        full.append(["openssl", "1.0"])
+        path = self.dir / "two.xlsx"
+        wb.save(path)
+        parsed = read_sbom(path)
+        self.assertEqual(parsed["sheet"], "Real")
+
+
 if __name__ == "__main__":
     unittest.main()

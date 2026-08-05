@@ -320,11 +320,14 @@ def _find_header_row(rows: list[list[Any]]) -> int:
         for aliases in HEADER_ALIASES.values()
         for alias in aliases
     }
-    for index, row in enumerate(rows[:20]):
+    for index, row in enumerate(rows[:50]):
         keys = {normalize_key(value) for value in row if repair_text(value)}
         score = len(keys & all_aliases)
         if any(key in {normalize_key(alias) for alias in HEADER_ALIASES["name"]} for key in keys):
-            score += 3
+            # A name-alias hit is a header signal, but the old +3 could let a
+            # data row that repeats an alias word outrank the real header. +1
+            # keeps it a tie-breaker, not an override.
+            score += 1
         if score > best_score:
             best_score = score
             best_index = index
@@ -365,10 +368,13 @@ def _read_xlsx(path: Path) -> dict[str, Any]:
                     if sheet_headers.index(header) < len(row)
                 )
             )
+            # Prefer sheets that actually contain identity data (populated rows)
+            # over sheets with more identity columns but no rows (e.g. an empty
+            # template sheet that lists every alias header).
             score = (
+                populated_identity_rows,
                 len(identity_headers),
                 len(sheet_mapping),
-                populated_identity_rows,
                 -order,
             )
             candidates.append(
@@ -415,6 +421,17 @@ def _read_xlsx(path: Path) -> dict[str, Any]:
 
 def _decode_csv(path: Path) -> str:
     data = path.read_bytes()
+    # Prefer charset_normalizer for detection: the old hard-coded gb18030
+    # fallback silently decoded European cp1252 bytes (e.g. Müller 0xfc) as
+    # Chinese gibberish, because gb18030 accepts those byte sequences.
+    try:
+        from charset_normalizer import from_bytes
+
+        best = from_bytes(data).best()
+        if best is not None and best.encoding:
+            return str(best)
+    except Exception:
+        pass
     for encoding in ("utf-8-sig", "gb18030", "utf-16"):
         try:
             return data.decode(encoding)
