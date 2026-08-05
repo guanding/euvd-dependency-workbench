@@ -11,7 +11,7 @@
 
 从一次 7 维度并行架构审查 Workflow 出发（6/7 维度成功，1 维度因 API 速率限制未完成），按优先级交付：客户数据外泄堵漏、双项目版本控制基线、版本号单一源、EUVD 目录列表/搜索（改进 1）、数据日期展示 + 按钮文案修正（改进 2a/Phase1）、CVE 匹配静默漏报修复、积极利用漏洞标注（CRA Art.3(42)）、403 fail-fast。
 
-**18 个 Web commit + 6 个 Mirror commit；Web 测试 40→92 项，Mirror 测试 17→42 项，全绿。**
+**19 个 Web commit + 6 个 Mirror commit；Web 测试 40→95 项，Mirror 测试 17→42 项，全绿。**
 
 ---
 
@@ -143,7 +143,7 @@ curl -fsS http://127.0.0.1:8090/api/health  # snapshot_sha256 一致
 - **第六步** — ✅ 已完成（2026-08-05，Mirror `5acec78` mirror_ops.py + Web `388d47d` API/前端）：真正"一键更新 EUVD"——`mirror_ops.py`（run/watch）acquire `exclusive_lock` → euvd_sync incremental+reference-data → build_local_euvd_snapshot → 写 `sync-status.json`；Web `POST /sync-request`（信号文件，running 时 409）+ `GET /sync-status`（轮询）；前端按钮"一键更新 EUVD" + 阶段显示。严守约束#3（Web 不写 Mirror，只发信号）。下方原设计保留。
 - **第七步** — ✅ 已完成（2026-08-05，commit `f1e095b`）：awareness 终态锁定 + stale 按 customer 隔离 + audit hash chain（prev_hash 链，`_ensure_column` 幂等 migration 已在线上 workbench 生效）。下方原设计保留。
 - **D3**：工程化发布（CI lint/unit/contract/E2E/dep scan/image scan；签名 SBOM+provenance；性能/故障注入测试）
-- **parsing-evidence 补审** — ✅ 完成（修 9/16，剩 5 项高复杂/低价值待后续；详见 memory）
+- **parsing-evidence 补审** — ✅ 完成（修 15/16；剩 float 版本丢尾零 1 项为 openpyxl 数字 cell 已知限制）
 
 ---
 
