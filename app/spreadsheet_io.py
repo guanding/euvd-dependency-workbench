@@ -210,8 +210,11 @@ def _extract_metadata_binding(workbook: Any) -> dict[str, Any] | None:
     ]
     metadata_sheet = None
     for sheet in visible:
-        title_lc = (sheet.title or "").casefold()
-        if "metadata" in title_lc or "元数据" in title_lc:
+        title = sheet.title or ""
+        # Token match (split on separators) so a sheet literally named
+        # "mymetadatanotes" does not match, but "01_Metadata_元数据" does.
+        title_tokens = re.split(r"[\s_\-/]+", title.casefold())
+        if "metadata" in title_tokens or "元数据" in title:
             metadata_sheet = sheet
             break
     if metadata_sheet is None:
@@ -271,20 +274,41 @@ def _dedupe_headers(values: list[Any]) -> list[str]:
     seen: dict[str, int] = {}
     for index, value in enumerate(values, start=1):
         base = repair_text(value) or f"Column {index}"
-        count = seen.get(base, 0) + 1
-        seen[base] = count
-        headers.append(base if count == 1 else f"{base} ({count})")
+        if base not in seen:
+            seen[base] = 1
+            headers.append(base)
+            continue
+        seen[base] += 1
+        # Use a '__N' suffix (not '(N)') so it cannot collide with a source
+        # header already shaped like "X (1)".
+        deduped = f"{base}__{seen[base]}"
+        while deduped in seen:
+            seen[base] += 1
+            deduped = f"{base}__{seen[base]}"
+        seen[deduped] = 1
+        headers.append(deduped)
     return headers
 
 
-def infer_mapping(headers: list[str]) -> dict[str, str]:
+def infer_mapping(headers: list[str], rows: list[dict[str, Any]] | None = None) -> dict[str, str]:
     mapping: dict[str, str] = {}
     for field, aliases in HEADER_ALIASES.items():
-        for header in headers:
-            key = normalize_key(header)
-            if key in {normalize_key(alias) for alias in aliases}:
-                mapping[field] = header
-                break
+        alias_keys = {normalize_key(alias) for alias in aliases}
+        candidates = [h for h in headers if normalize_key(h) in alias_keys]
+        if not candidates:
+            continue
+        if rows:
+            # Prefer a candidate column that actually has data; an empty
+            # first-match column (e.g. a blank template column) would otherwise
+            # be mapped and yield zero components.
+            populated = [
+                h
+                for h in candidates
+                if any(repair_text(r.get(h)) for r in rows[:200])
+            ]
+            mapping[field] = populated[0] if populated else candidates[0]
+        else:
+            mapping[field] = candidates[0]
     return mapping
 
 
@@ -365,6 +389,14 @@ def _read_xlsx(path: Path) -> dict[str, Any]:
         metadata_binding = _extract_metadata_binding(workbook)
     finally:
         workbook.close()
+    # Ragged rows: if any data row is wider than the header, extend headers with
+    # extra_N columns so the trailing cells are kept instead of silently dropped.
+    max_width = max(
+        (len(raw) for raw in raw_rows[header_index + 1 :]), default=len(headers)
+    )
+    if max_width > len(headers):
+        extra_count = max_width - len(headers)
+        headers = headers + [f"extra_{i + 1}" for i in range(extra_count)]
     rows: list[dict[str, Any]] = []
     for raw in raw_rows[header_index + 1 :]:
         padded = list(raw) + [None] * max(0, len(headers) - len(raw))
@@ -403,6 +435,12 @@ def _read_csv(path: Path) -> dict[str, Any]:
         raise ValueError("CSV 没有可读取的数据")
     header_index = _find_header_row(raw_rows)
     headers = _dedupe_headers(raw_rows[header_index])
+    max_width = max(
+        (len(raw) for raw in raw_rows[header_index + 1 :]), default=len(headers)
+    )
+    if max_width > len(headers):
+        extra_count = max_width - len(headers)
+        headers = headers + [f"extra_{i + 1}" for i in range(extra_count)]
     rows = []
     for raw in raw_rows[header_index + 1 :]:
         padded = list(raw) + [""] * max(0, len(headers) - len(raw))
@@ -565,7 +603,7 @@ def read_sbom(path: Path) -> dict[str, Any]:
         result = _read_cyclonedx(path)
     else:
         raise ValueError("仅支持 .xlsx、.xlsm、.csv、.tsv 和 CycloneDX .json")
-    result.setdefault("mapping", infer_mapping(result["headers"]))
+    result.setdefault("mapping", infer_mapping(result["headers"], result["rows"]))
     identity_headers = [
         result["mapping"].get(field)
         for field in ("name", "purl", "cpe", "cve", "euvd")

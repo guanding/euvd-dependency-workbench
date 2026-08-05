@@ -107,5 +107,44 @@ class ParsingEvidenceP2AliasTests(unittest.TestCase):
         self.assertEqual(_match_metadata_label("Product version 产品版本"), "product_version")
 
 
+class ParsingEvidenceP2ParseTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self._tmp.name)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_infer_mapping_prefers_populated_column(self) -> None:
+        from app.spreadsheet_io import infer_mapping
+
+        headers = ["组件名称", "Component Name"]
+        rows = [
+            {"组件名称": "", "Component Name": "openssl"},
+            {"组件名称": "", "Component Name": "curl"},
+        ]
+        mapping = infer_mapping(headers, rows)
+        self.assertEqual(mapping.get("name"), "Component Name")
+
+    def test_dedupe_uses_collision_free_suffix(self) -> None:
+        from app.spreadsheet_io import _dedupe_headers
+
+        # a source header already shaped "X (1)" must not collide with a real
+        # duplicate of "X"
+        result = _dedupe_headers(["X (1)", "X", "X"])
+        self.assertEqual(result[0], "X (1)")
+        self.assertEqual(result[1], "X")
+        self.assertTrue(result[2].startswith("X__"))
+
+    def test_ragged_rows_keep_extra_columns(self) -> None:
+        # CSV rows are variable length (csv.reader); a row wider than the header
+        # must keep its trailing cells as extra_N rather than silently drop them.
+        # (xlsx is not affected: openpyxl pads rows to max_column.)
+        path = self.dir / "ragged.csv"
+        path.write_text("组件名称,版本\nopenssl,1.0,extra-note\n", encoding="utf-8")
+        parsed = read_sbom(path)
+        self.assertIn("extra_1", parsed["headers"])
+
+
 if __name__ == "__main__":
     unittest.main()
