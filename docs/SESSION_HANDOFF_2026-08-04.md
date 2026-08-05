@@ -11,7 +11,7 @@
 
 从一次 7 维度并行架构审查 Workflow 出发（6/7 维度成功，1 维度因 API 速率限制未完成），按优先级交付：客户数据外泄堵漏、双项目版本控制基线、版本号单一源、EUVD 目录列表/搜索（改进 1）、数据日期展示 + 按钮文案修正（改进 2a/Phase1）、CVE 匹配静默漏报修复、积极利用漏洞标注（CRA Art.3(42)）、403 fail-fast。
 
-**32 个 Web commit + 7 个 Mirror commit；Web 测试 40→104 项，Mirror 测试 17→42 项，全绿。**
+**40 个 Web commit + 9 个 Mirror commit；Web 测试 40→115 项，Mirror 测试 17→47 项，全绿。**
 
 ---
 
@@ -265,8 +265,8 @@ curl -fsS http://127.0.0.1:8090/api/health | python3 -m json.tool
 6. **监控告警** ✅（Web `f179e69` orchestrator_available staleness 修 + Mirror `f486354` `alert_watch.py`）：`check_signals`（403 持续→error/backup 过期/sha 缺失）+ `notify`（log/macos/webhook sink）。5 测试。
 
 ### 低优先级（规模/质量）
-7. **E2E 测试 + 故障注入**：单元测试强，缺端到端 + 故障注入（同步失败/快照损坏/网络断）。
-8. **多产品批量 + 客户案例库**：一次多 SBOM；`sbom_snapshots` 建历史判定案例库（同产品旧版判定 → 新版复用）。
+7. **E2E + 故障注入** ✅（Web `9bc1254`）：`test_e2e_pipeline.py`——happy path（**真 match_components 不 mock** → completed + report.xlsx + sbom_snapshots 注册）+ crash mid-run（match raises → failed 无 report）。corrupted-sha 变体发现 CVE 精确匹配查 `cve_euvd_mapping` 不经 vulnerabilities sha 校验路径（合理，非 bug）。
+8. **多产品批量 + 客户案例库**：未做（按需）。
 
 **决策**：1/2/3 已验证实现（见上）；后续按需做 4-8（VEX 草稿 / CI / 监控 / E2E / 批量）。
 
