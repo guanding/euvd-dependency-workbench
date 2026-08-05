@@ -87,7 +87,7 @@
 | 中危 | 无 schema migration | euvd_sync.py:274 | ⏳ D1/D3 |
 | 中危 | audit 无 hash chain | workflow_store.py _audit | ✅ 第七步 prev_hash 链 |
 
-> **parsing-evidence 维度** — ✅ 已补审（2026-08-05，workflow 7 维审查 22 raw→16 confirmed，修 9/16；见 §6 路线图）。剩 5 项（gb18030 编码/float 版本/sheet 评分/scan cap）高复杂或低价值，记录待后续。
+> **parsing-evidence 维度** — ✅ 已补审（2026-08-05，workflow 7 维 22 raw→16 confirmed，修 15/16；见 §6）。剩 float 版本丢尾零 1 项为 openpyxl 数字 cell 已知限制。
 
 ---
 
