@@ -827,6 +827,27 @@ async def request_mirror_sync() -> dict[str, Any]:
     return {"requested": True, "request_id": request["request_id"]}
 
 
+def _orchestrator_alive(status: dict[str, Any], max_age_seconds: int = 300) -> bool:
+    """True if the orchestrator is actively running or finished/failed recently.
+
+    A stale sync-status.json left by a dead/stuck ops container must NOT report
+    the orchestrator as available (the old `setdefault(True)` did, whenever the
+    file merely existed).
+    """
+    if status.get("state") == "running":
+        return True
+    finished = status.get("finished_at")
+    if not finished:
+        return False
+    try:
+        moment = datetime.fromisoformat(str(finished).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - moment).total_seconds() < max_age_seconds
+
+
 @app.get("/api/euvd/sync-status")
 async def mirror_sync_status() -> dict[str, Any]:
     if not SYNC_STATUS_PATH.exists():
@@ -840,7 +861,7 @@ async def mirror_sync_status() -> dict[str, Any]:
         status = json.loads(SYNC_STATUS_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {"state": "idle", "stage": "", "error": "status unreadable"}
-    status.setdefault("orchestrator_available", True)
+    status["orchestrator_available"] = _orchestrator_alive(status)
     return status
 
 

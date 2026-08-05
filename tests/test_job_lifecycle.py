@@ -227,5 +227,37 @@ class JobLifecycleTests(unittest.TestCase):
         self.assertEqual(saved["status"], "cancelled")
 
 
+class OrchestratorAvailabilityTests(unittest.TestCase):
+    def test_running_state_is_available(self) -> None:
+        from app.main import _orchestrator_alive
+
+        self.assertTrue(_orchestrator_alive({"state": "running"}))
+
+    def test_stale_finished_is_unavailable(self) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        from app.main import _orchestrator_alive
+
+        old = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        self.assertFalse(
+            _orchestrator_alive({"state": "completed", "finished_at": old})
+        )
+
+    def test_fresh_finished_is_available(self) -> None:
+        from datetime import datetime, timezone
+
+        from app.main import _orchestrator_alive
+
+        fresh = datetime.now(timezone.utc).isoformat()
+        self.assertTrue(
+            _orchestrator_alive({"state": "completed", "finished_at": fresh})
+        )
+
+    def test_no_finished_at_is_unavailable(self) -> None:
+        from app.main import _orchestrator_alive
+
+        self.assertFalse(_orchestrator_alive({"state": "idle"}))
+
+
 if __name__ == "__main__":
     unittest.main()
