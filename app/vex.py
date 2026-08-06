@@ -40,8 +40,8 @@ def _product_lookup(payload: dict[str, Any]) -> dict[str, str]:
 
 def _parse_cyclonedx(payload: dict[str, Any]) -> tuple[str, list[dict[str, Any]], list[str]]:
     spec = str(payload.get("specVersion") or "")
-    if payload.get("bomFormat") != "CycloneDX" or spec != "1.7":
-        raise ValueError("仅支持 CycloneDX 1.7 VEX JSON")
+    if payload.get("bomFormat") != "CycloneDX" or spec not in {"1.5", "1.6", "1.7"}:
+        raise ValueError("仅支持 CycloneDX 1.5/1.6/1.7 VEX JSON")
     metadata_component = (payload.get("metadata") or {}).get("component") or {}
     default_product = str(
         metadata_component.get("name")
@@ -65,7 +65,7 @@ def _parse_cyclonedx(payload: dict[str, Any]) -> tuple[str, list[dict[str, Any]]
             product_id = str(affected.get("ref") or metadata_component.get("bom-ref") or "")
             entries.append(
                 {
-                    "format": "cyclonedx-1.7",
+                    "format": f"cyclonedx-{spec}",
                     "vulnerability_id": vulnerability_id,
                     "cve_id": vulnerability_id if vulnerability_id.startswith("CVE-") else "",
                     "euvd_id": vulnerability_id if vulnerability_id.startswith("EUVD-") else "",
@@ -130,7 +130,7 @@ def parse_vex_bytes(content: bytes) -> dict[str, Any]:
         raise ValueError("VEX 根节点必须为 JSON 对象")
     if payload.get("bomFormat") == "CycloneDX":
         document_id, entries, warnings = _parse_cyclonedx(payload)
-        vex_format = "cyclonedx-1.7"
+        vex_format = f"cyclonedx-{payload.get('specVersion') or '1.7'}"
     else:
         document_id, entries, warnings = _parse_csaf(payload)
         vex_format = "csaf-2.0"

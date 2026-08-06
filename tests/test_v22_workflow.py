@@ -361,6 +361,23 @@ class VexTests(unittest.TestCase):
         self.assertEqual(parsed["entries"][0]["status"], "under_investigation")
         self.assertTrue(parsed["warnings"])
 
+    def test_cyclonedx_1_5_accepted_after_spec_widening(self) -> None:
+        # spec 放宽到 1.5/1.6/1.7（与 SBOM Workbench vex_consume 一致）：
+        # 外部 PSIRT 签发的 1.5/1.6 VEX 不再被拒，format 动态记录实际版本。
+        payload = {
+            "bomFormat": "CycloneDX",
+            "specVersion": "1.5",
+            "serialNumber": "urn:uuid:test15",
+            "metadata": {"component": {"bom-ref": "p:1", "name": "X", "version": "1.0"}},
+            "vulnerabilities": [
+                {"id": "CVE-2026-1", "affects": [{"ref": "p:1"}],
+                 "analysis": {"state": "not_affected", "justification": "code_not_present"}},
+            ],
+        }
+        parsed = parse_vex_bytes(json.dumps(payload).encode())
+        self.assertEqual(parsed["format"], "cyclonedx-1.5")
+        self.assertEqual(parsed["entries"][0]["status"], "known_not_affected")
+
     def test_csaf_conflicting_statuses_are_rejected(self) -> None:
         payload = {
             "document": {
