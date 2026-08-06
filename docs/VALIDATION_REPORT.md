@@ -26,7 +26,7 @@
 2. **CVE mapping backfill**（一键 95.32% → ~100%）：从 `record_json.aliases` 提取 17,438 未进 mapping 的 EUVD → `INSERT IGNORE`。纯数据补录，零 matcher 改动。
 3. **版本 normalizer**（49% → 65-70%）：剥尾 build/patch token（Cisco "23.0 ap383515" → "23.0"；Cisco IOS "4.2(1e)" → "4.2"；Windows "Version 1607" 提取）。
 4. **Windows SKU 归一化**：碎片化 SKU（Server Core/Version 变体）合并为 (product, major-version) family。top-15 中 12 个是 Windows SKU。
-5. **放弃 CPE 基础设施**：0.004% 覆盖不值得；全力 name+vendor 模糊匹配 + 版本范围解析。
+5. **~~放弃 CPE 基础设施~~（2026-08-06 调查关闭）**：原判 0.004% 覆盖的 CPE 是死代码；经 5-agent workflow + 独立 grep 交叉验证，**CPE 在代码里从不是匹配查询词**（无 `WHERE cpe`、local 表无 cpe 列、`EuvdClient.search` 无 cpe 参数），只用于组件归一化（`parse_cpe` 回填 name/vendor）+ 身份判据（`identity_ready`）+ 审计证据展示——全部活代码。保留 `parse_cpe` fallback 符合 #5（CPE-only 组件仍尝试识别，不静默放弃）。详见 §5。
 
 ## 4. 结论
 
@@ -59,4 +59,15 @@
 - **产品候选路径**：噪声 -13% + vendor 联合收窄 + top-N 防 8830 候选爆炸，真实 syft 场景可用性显著提升
 - **#3 版本判定（诚实评估）**：保守 fuzzy 救援救回 1,328 个真实可判定 expression（此前 None 现确定 True/False，零误判）。**未达 49%→65-70% 目标**——EUVD 的 51% prose 中大量是 `n/a`/`unknown` 占位 + 模糊人类描述（无机器可解析版本范围），保守可救的（有明确范围语义）仅 ~0.14%；激进救 placeholder/fixed-in/bare-product 会冒误判 True 牵连无关旧版本的风险，违反"宁可待核验不可误报"原则，故保守不动。
 
-**剩余 §3 backlog**（价值递减，后续迭代）：#4（Windows SKU 归一化，仅 Windows 场景）、#5（放弃 CPE 基础设施，0.004% 覆盖的死代码清理）。
+**剩余 §3 backlog**（价值递减，后续迭代）：#4（Windows SKU 归一化，仅 Windows 场景）、Phase C float 版本丢尾零。**#5 已于 2026-08-06 调查关闭**（无 CPE 匹配基础设施可弃，详见 §5.1）。
+
+### 5.1 #5 CPE 基础设施调查（2026-08-06，关闭）
+
+5-agent workflow（`cpe-deadcode-survey`：4 路并行静态调查 matcher/snapshot/tests/api-ui + synthesis）+ 独立 grep 交叉验证，结论一致：
+
+- **CPE 在代码里从不是匹配查询词**：`EuvdClient.search()`（matcher.py:1226）/`_query_local_product()`（L906）只按 product_key+vendor_key 查；local SQLite 表（local_products/vulnerabilities/cve_euvd_mapping/known_exploited）无 cpe 列；mirror 侧 `euvd_sync.py` CREATE TABLE 也无 cpe 列。**snapshot 无需重建**。
+- §1 的「39/1,117,611 有 CPE」是 **EUVD 侧** `product_version` 字段含 CPE 字符串的记录数（数据观察），**非消费者侧 CPE 匹配代码**。§3 #5 据此判「死代码」是误读。
+- CPE 实际承担**最小化活角色**：`parse_cpe`（L147）→ `enrich_component`（L161-170）回填 CPE-only 组件的 name/vendor（喂后续 name+vendor 搜索）；`identity_ready`（L1839）把 cpe 作身份判据之一（喂身份覆盖 KPI）；`component_cpe`（L1401/1509）作审计证据展示；`spreadsheet_io.py:76-82` 识别 SBOM 表格 CPE 列。
+- **synthesis 推荐 `proceed-partial`**（删 parse_cpe + enrich CPE 分支 + CpeParsingTests），但**决定保留**：删除是非对称风险——省 ~16 行代码，却引入 #5 风险（CPE-only 组件静默放弃识别，哪怕 0.004%）+ 跨文件协调（`Component.cpe` 字段级联 spreadsheet_io 9 处/main 2 处/sbom_evidence 3 处）+ 身份覆盖 KPI 回归。在「宁可待核验不可误报」+「surgical changes」下，保留零成本零风险，删除收益边际。
+
+**结论：#5 关闭，不改代码。** CPE 保持最小化组件归一化角色。
