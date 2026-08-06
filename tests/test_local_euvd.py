@@ -43,7 +43,10 @@ class LocalEuvdSnapshotTests(unittest.TestCase):
                 CREATE TABLE known_exploited(cve_id TEXT, euvd_id TEXT, date_added TEXT);
                 CREATE TABLE known_exploited_sources(cve_id TEXT, euvd_id TEXT, source TEXT);
                 CREATE TABLE vulnerabilities(euvd_id TEXT PRIMARY KEY, record_json TEXT, updated_raw TEXT);
-                CREATE TABLE local_products(product_key TEXT, euvd_id TEXT);
+                CREATE TABLE local_products(
+                    product_key TEXT, vendor_key TEXT, euvd_id TEXT,
+                    product_name TEXT, vendor_name TEXT, affected_versions TEXT
+                );
                 """
             )
             metadata = {
@@ -95,8 +98,15 @@ class LocalEuvdSnapshotTests(unittest.TestCase):
                 ("EUVD-2024-1", json.dumps(record), "2026-01-01"),
             )
             connection.execute(
-                "INSERT INTO local_products VALUES (?, ?)",
-                ("exampleproduct", "EUVD-2024-1"),
+                "INSERT INTO local_products VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    "exampleproduct",
+                    "example",
+                    "EUVD-2024-1",
+                    "Example Product",
+                    "Example",
+                    "1.0",
+                ),
             )
         self.previous_path = matcher.LOCAL_EUVD_DB
         self.previous_sha_path = matcher.LOCAL_EUVD_SHA256_FILE
@@ -181,6 +191,126 @@ class LocalEuvdSnapshotTests(unittest.TestCase):
                 workbook.close()
 
         asyncio.run(exercise())
+
+    def _add_second_product(
+        self, vendor_name: str, euvd_id: str, product_version: str = "2.0"
+    ) -> None:
+        """Insert a second record sharing the product_key but differing vendor,
+        so vendor+product joint matching has something to narrow against."""
+        record = {
+            "id": euvd_id,
+            "aliases": "CVE-2024-2000",
+            "enisaIdProduct": [
+                {
+                    "product": {"name": "Example Product", "vendor": {"name": vendor_name}},
+                    "product_version": product_version,
+                }
+            ],
+        }
+        product_key = "exampleproduct"
+        vendor_key = matcher.normalize_key(vendor_name)
+        with closing(sqlite3.connect(self.database_path)) as connection:
+            connection.execute(
+                "INSERT INTO vulnerabilities VALUES (?, ?, ?)",
+                (euvd_id, json.dumps(record), "2026-01-02"),
+            )
+            connection.execute(
+                "INSERT INTO local_products VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    product_key,
+                    vendor_key,
+                    euvd_id,
+                    "Example Product",
+                    vendor_name,
+                    product_version,
+                ),
+            )
+            connection.commit()
+        # The DB bytes changed; recompute the sidecar sha and drop the client's
+        # validation cache so the next search passes the integrity gate.
+        matcher.LOCAL_EUVD_SHA256_FILE.write_text(
+            hashlib.sha256(self.database_path.read_bytes()).hexdigest() + "\n",
+            encoding="ascii",
+        )
+        matcher.EuvdClient._local_validation_cache = None
+
+    def test_vendor_joint_match_narrows_candidates(self) -> None:
+        # Same product_key, two vendors: joint match must return only the
+        # record whose vendor matches the SBOM-supplied vendor.
+        self._add_second_product("OtherVendor", "EUVD-2024-2")
+
+        async def exercise() -> None:
+            wrapper = matcher.EuvdClient()
+            async with httpx.AsyncClient() as client:
+                items, meta = await wrapper.search(
+                    client, "Example Product", "Example"
+                )
+            self.assertEqual(meta["vendor_filter"], "joint")
+            self.assertEqual([item["id"] for item in items], ["EUVD-2024-1"])
+
+        asyncio.run(exercise())
+
+    def test_vendor_fallback_when_joint_match_empty(self) -> None:
+        # SBOM vendor disagrees with every EUVD vendor spelling: joint match is
+        # empty, so widen back to product-only rather than miss silently
+        # (design constraint #5).
+        self._add_second_product("OtherVendor", "EUVD-2024-2")
+
+        async def exercise() -> None:
+            wrapper = matcher.EuvdClient()
+            async with httpx.AsyncClient() as client:
+                items, meta = await wrapper.search(
+                    client, "Example Product", "UnknownVendor"
+                )
+            self.assertEqual(meta["vendor_filter"], "fallback")
+            self.assertEqual(
+                sorted(item["id"] for item in items),
+                ["EUVD-2024-1", "EUVD-2024-2"],
+            )
+
+        asyncio.run(exercise())
+
+    def test_no_vendor_matches_product_only(self) -> None:
+        async def exercise() -> None:
+            wrapper = matcher.EuvdClient()
+            async with httpx.AsyncClient() as client:
+                items, meta = await wrapper.search(client, "Example Product", "")
+            self.assertEqual(meta["vendor_filter"], "none")
+            self.assertEqual([item["id"] for item in items], ["EUVD-2024-1"])
+
+        asyncio.run(exercise())
+
+    def test_product_candidates_capped_to_top_n(self) -> None:
+        # Six product candidates share one product_key with distinct vendors.
+        # product_version="*" keeps affected indeterminate so evaluate_item
+        # does not drop them via the version gate (L1343); the cap, not
+        # version filtering, is what this test exercises.
+        for idx in range(2, 7):
+            self._add_second_product(f"Vendor{idx}", f"EUVD-2024-{idx}", "*")
+        original_cap = matcher.MAX_PRODUCT_CANDIDATES
+        matcher.MAX_PRODUCT_CANDIDATES = 3
+        try:
+
+            async def exercise() -> None:
+                result = await matcher.match_components(
+                    [
+                        matcher.Component(
+                            row_number=2,
+                            name="Example Product",
+                            version="1.0",
+                            vendor="Nomatch",  # no joint match -> fallback -> all 6
+                        )
+                    ]
+                )
+                # Cap keeps the top-3 confidence slice. The per-component sort
+                # floats 已匹配 + higher CVSS to the front, so capping only
+                # drops the low-confidence 需复核 tail — never a confirmed match.
+                self.assertEqual(len(result["matches"]), 3)
+                self.assertTrue(result["components"][0]["query_truncated"])
+
+            asyncio.run(exercise())
+        finally:
+            matcher.MAX_PRODUCT_CANDIDATES = original_cap
 
     def test_hash_mismatch_fails_closed_without_network_query(self) -> None:
         matcher.LOCAL_EUVD_SHA256_FILE.write_text("0" * 64 + "\n", encoding="ascii")

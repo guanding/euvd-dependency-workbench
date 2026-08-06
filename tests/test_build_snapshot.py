@@ -8,6 +8,7 @@ any future mirror table not on the allowlist is excluded by default.
 """
 
 import importlib.util
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -160,6 +161,121 @@ class BuildSnapshotAllowlistTests(unittest.TestCase):
         build_snapshot(source2, output2)
         self.assertNotIn("future_customer_evidence", _table_names(output2))
         self.assertNotIn(b"FUTURE-SECRET", output2.read_bytes())
+
+
+def _make_source_with_products(path: Path) -> None:
+    """Mirror-shaped source carrying one real product and one placeholder
+    "n/a" product, plus alias CVEs absent from the reference mapping."""
+    con = sqlite3.connect(path)
+    con.execute("PRAGMA journal_mode=DELETE")
+    con.execute(
+        "CREATE TABLE vulnerabilities ("
+        " euvd_id TEXT PRIMARY KEY, record_json TEXT, updated_raw INTEGER)"
+    )
+    con.execute("CREATE TABLE cve_euvd_mapping (cve_id TEXT, euvd_id TEXT)")
+    con.execute("CREATE TABLE known_exploited (vuln_id TEXT)")
+    con.execute("CREATE TABLE known_exploited_sources (source_name TEXT)")
+    con.execute(
+        "CREATE TABLE data_source_versions ("
+        " source_name TEXT, source_url TEXT, last_checked_at TEXT,"
+        " last_modified TEXT, content_sha256 TEXT, record_count INTEGER,"
+        " http_status INTEGER, is_current INTEGER)"
+    )
+    con.execute("CREATE TABLE sync_state (key TEXT PRIMARY KEY, value TEXT)")
+    con.execute(
+        "INSERT INTO sync_state (key, value) VALUES "
+        "('last_successful_to_date', '2026-07-28'),"
+        "('reference_data_freshness', 'fresh')"
+    )
+    con.execute(
+        "CREATE TABLE sync_runs (run_id TEXT, mode TEXT, status TEXT, started_at TEXT)"
+    )
+    # EUVD-1: real product + an alias CVE NOT present in the reference mapping.
+    rec1 = {
+        "id": "EUVD-2024-1",
+        "aliases": "CVE-2024-9999",
+        "enisaIdProduct": [
+            {
+                "product": {"name": "RealProduct", "vendor": {"name": "RealVendor"}},
+                "product_version": "1.0",
+            }
+        ],
+    }
+    # EUVD-2: placeholder "n/a" product (must be filtered out of local_products)
+    # but its alias CVE must still be backfilled — the CVE path is independent
+    # of the product index, so filtering placeholders loses no signal.
+    rec2 = {
+        "id": "EUVD-2024-2",
+        "aliases": "CVE-2024-8888",
+        "enisaIdProduct": [
+            {
+                "product": {"name": "n/a", "vendor": {"name": "n/a"}},
+                "product_version": "*",
+            }
+        ],
+    }
+    con.execute(
+        "INSERT INTO vulnerabilities VALUES ('EUVD-2024-1', ?, 100)",
+        (json.dumps(rec1),),
+    )
+    con.execute(
+        "INSERT INTO vulnerabilities VALUES ('EUVD-2024-2', ?, 200)",
+        (json.dumps(rec2),),
+    )
+    # One pair already supplied by the reference mapping — must be deduped,
+    # not duplicated, by the alias backfill pass.
+    con.execute(
+        "INSERT INTO cve_euvd_mapping VALUES ('CVE-2024-1111', 'EUVD-2024-1')"
+    )
+    con.commit()
+    con.close()
+
+
+class ProductIndexNoiseAndBackfillTests(unittest.TestCase):
+    """#1a filter placeholder product names + #2 backfill CVE mapping from
+    record aliases. Both run inside build_snapshot's single vulnerabilities
+    pass; filtering placeholder products never drops CVE-path signal."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self._tmp.name)
+        self.source = self.dir / "mirror.sqlite3"
+        self.output = self.dir / "consumer.sqlite3"
+        _make_source_with_products(self.source)
+        build_snapshot(self.source, self.output)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_placeholder_product_names_filtered(self):
+        con = sqlite3.connect(self.output)
+        try:
+            keys = {
+                str(r[0])
+                for r in con.execute("SELECT product_key FROM local_products")
+            }
+        finally:
+            con.close()
+        self.assertIn("realproduct", keys)
+        # "n/a" normalize_key -> "na" (non-empty), so the filter must act on
+        # the raw placeholder name, not rely on the empty-key guard.
+        self.assertNotIn("na", keys)
+
+    def test_cve_mapping_backfilled_from_aliases(self):
+        con = sqlite3.connect(self.output)
+        try:
+            pairs = {
+                (str(r[0]), str(r[1]))
+                for r in con.execute("SELECT cve_id, euvd_id FROM cve_euvd_mapping")
+            }
+        finally:
+            con.close()
+        # Reference-supplied pair preserved (dedup, not duplicated).
+        self.assertIn(("CVE-2024-1111", "EUVD-2024-1"), pairs)
+        # Aliases backfilled — including the one on the n/a-only record,
+        # proving product filtering and CVE backfill are independent.
+        self.assertIn(("CVE-2024-9999", "EUVD-2024-1"), pairs)
+        self.assertIn(("CVE-2024-8888", "EUVD-2024-2"), pairs)
 
 
 if __name__ == "__main__":

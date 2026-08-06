@@ -24,6 +24,12 @@ EUVD_BASE_URL = os.getenv("EUVD_BASE_URL", "https://euvdservices.enisa.europa.eu
 CACHE_HOURS = int(os.getenv("EUVD_CACHE_HOURS", "24"))
 CONCURRENCY = max(1, int(os.getenv("EUVD_CONCURRENCY", "4")))
 MAX_PAGES = max(1, int(os.getenv("EUVD_MAX_PAGES", "100")))
+# Cap on product-candidate matches per component. The product path can return
+# thousands of records for common names (Linux/Chrome); keep the highest-
+# confidence slice and surface truncation rather than flood the report
+# (VALIDATION_REPORT §2: 88 candidates/component median). CVE-exact matches
+# (query_mode identifier-exact) are never capped.
+MAX_PRODUCT_CANDIDATES = max(5, int(os.getenv("EUVD_MAX_PRODUCT_CANDIDATES", "50")))
 DATA_DIR = Path(os.getenv("DATA_DIR", "/app/data"))
 CACHE_DB = DATA_DIR / "euvd-cache.sqlite3"
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -874,27 +880,48 @@ class EuvdClient:
         vendor: str,
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         product_key = normalize_key(product)
+        vendor_key = normalize_key(vendor) if vendor else ""
         limit = MAX_PAGES * 100
         try:
             with closing(cls._local_connect()) as connection:
-                total = int(
-                    connection.execute(
-                        "SELECT COUNT(DISTINCT euvd_id) FROM local_products "
-                        "WHERE product_key = ?",
-                        (product_key,),
-                    ).fetchone()[0]
-                )
-                rows = connection.execute(
-                    """
-                    SELECT DISTINCT v.euvd_id, v.record_json, v.updated_raw
-                    FROM local_products p
-                    JOIN vulnerabilities v ON v.euvd_id = p.euvd_id
-                    WHERE p.product_key = ?
-                    ORDER BY v.updated_raw DESC, v.euvd_id
-                    LIMIT ?
-                    """,
-                    (product_key, limit),
-                ).fetchall()
+
+                def _fetch(where_extra: str, params: list[str]) -> tuple[list, int]:
+                    total = int(
+                        connection.execute(
+                            "SELECT COUNT(DISTINCT p.euvd_id) FROM local_products p "
+                            "WHERE p.product_key = ?" + where_extra,
+                            [product_key, *params],
+                        ).fetchone()[0]
+                    )
+                    fetched = connection.execute(
+                        """
+                        SELECT DISTINCT v.euvd_id, v.record_json, v.updated_raw
+                        FROM local_products p
+                        JOIN vulnerabilities v ON v.euvd_id = p.euvd_id
+                        WHERE p.product_key = ?
+                        """
+                        + where_extra
+                        + """
+                        ORDER BY v.updated_raw DESC, v.euvd_id
+                        LIMIT ?
+                        """,
+                        [product_key, *params, limit],
+                    ).fetchall()
+                    return fetched, total
+
+                # vendor+product joint match narrows Linux/Chrome-style wide
+                # buckets (VALIDATION_REPORT §3). If the joint match is empty
+                # the SBOM-supplied vendor may just disagree with EUVD's vendor
+                # spelling — widen back to product-only rather than miss silently
+                # (design constraint #5: 未命中≠不存在).
+                if vendor_key:
+                    rows, total = _fetch(" AND p.vendor_key = ?", [vendor_key])
+                    vendor_filter = "joint" if rows else "fallback"
+                    if not rows:
+                        rows, total = _fetch("", [])
+                else:
+                    rows, total = _fetch("", [])
+                    vendor_filter = "none"
                 metadata = cls._local_metadata(connection)
         except sqlite3.Error as exc:
             raise ValueError(f"本地 EUVD 产品查询失败: {repair_text(exc)}") from exc
@@ -913,6 +940,7 @@ class EuvdClient:
             "truncated": total > len(items),
             "query_mode": "local-mirror-product-exact",
             "requested_vendor": vendor,
+            "vendor_filter": vendor_filter,
             "mirror_snapshot_created_at": metadata.get("snapshot_created_at", ""),
             "mirror_last_successful_to_date": metadata.get(
                 "last_successful_to_date", ""
@@ -1731,6 +1759,21 @@ async def match_components(
                         row["euvd_id"],
                     )
                 )
+                # Cap product-candidate noise. The sort above already floats
+                # "已匹配" and higher-CVSS rows to the front, so capping only
+                # drops the low-confidence "需复核" tail — never a confirmed
+                # match. The CVE-exact path (query_mode identifier-exact) is
+                # excluded so exact matches are never lost.
+                if (
+                    len(matches) > MAX_PRODUCT_CANDIDATES
+                    and "product" in str(query_meta.get("query_mode", ""))
+                ):
+                    query_meta["truncated"] = True
+                    query_meta["product_candidates_cap"] = {
+                        "before": len(matches),
+                        "after": MAX_PRODUCT_CANDIDATES,
+                    }
+                    matches = matches[:MAX_PRODUCT_CANDIDATES]
             except (httpx.HTTPError, ValueError) as exc:
                 error = str(exc)
 

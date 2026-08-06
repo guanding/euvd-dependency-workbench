@@ -40,6 +40,31 @@ CONSUMER_TABLE_ALLOWLIST = frozenset(
     }
 )
 
+# Placeholder product names that carry no identity signal — filtered out of
+# the local_products index. Their CVEs still reach the matcher via the CVE-exact
+# path (cve_euvd_mapping), so this loses no vulnerability signal; it only keeps
+# the product-candidate path from surfacing "n/a" garbage (VALIDATION_REPORT §1:
+# 40.6% of EUVD product records are placeholders).
+_PLACEHOLDER_PRODUCT_NAMES = frozenset(
+    {
+        "",
+        "n/a",
+        "na",
+        "n.a",
+        "n.a.",
+        "none",
+        "null",
+        "-",
+        "--",
+        "unknown",
+        "not applicable",
+        "not specified",
+    }
+)
+
+# CVE identifiers extracted from record aliases for mapping backfill.
+CVE_PATTERN = re.compile(r"CVE-\d{4}-\d{4,}", re.IGNORECASE)
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -107,6 +132,8 @@ def product_rows(
         if not isinstance(product, dict):
             continue
         product_name = str(product.get("name") or "").strip()
+        if product_name.casefold() in _PLACEHOLDER_PRODUCT_NAMES:
+            continue
         vendor = product.get("vendor")
         vendor_name = (
             str(vendor.get("name") or "").strip()
@@ -209,6 +236,28 @@ def _build_snapshot(source: Path, output: Path, temporary: Path) -> dict[str, An
             database.execute(f'DROP TABLE IF EXISTS "{table}"')
         database.execute("DROP TABLE IF EXISTS local_products")
         database.execute("DROP TABLE IF EXISTS web_snapshot_metadata")
+        # Capture the reference CVE→EUVD mapping supplied by the mirror, then
+        # rebuild the consumer table as a lean (cve_id, euvd_id) pair index.
+        # The mirror's 5-column schema tracks sync provenance the consumer never
+        # queries; the lean table shrinks the snapshot and gives CVE backfill a
+        # clean PRIMARY KEY dedup target.
+        existing_mapping_pairs = {
+            (str(row[0]).upper(), str(row[1]).upper())
+            for row in database.execute(
+                "SELECT cve_id, euvd_id FROM cve_euvd_mapping"
+            )
+        }
+        database.execute("DROP TABLE cve_euvd_mapping")
+        database.execute(
+            """
+            CREATE TABLE cve_euvd_mapping (
+                cve_id TEXT NOT NULL,
+                euvd_id TEXT NOT NULL,
+                PRIMARY KEY(cve_id, euvd_id)
+            )
+            """
+        )
+        mapping_pairs: set[tuple[str, str]] = set(existing_mapping_pairs)
         database.execute(
             """
             CREATE TABLE local_products (
@@ -227,10 +276,27 @@ def _build_snapshot(source: Path, output: Path, temporary: Path) -> dict[str, An
         for euvd_id, record_json in database.execute(
             "SELECT euvd_id, record_json FROM vulnerabilities ORDER BY euvd_id"
         ):
-            rows = list(product_rows(str(euvd_id), str(record_json)))
-            if not rows and not str(record_json).lstrip().startswith("{"):
+            euvd_id_text = str(euvd_id)
+            record_text = str(record_json)
+            rows = list(product_rows(euvd_id_text, record_text))
+            if not rows and not record_text.lstrip().startswith("{"):
                 invalid_records += 1
             batch.extend(rows)
+            # CVE backfill: pull alias CVEs from the same record in the same
+            # pass — independent of product filtering, so placeholder-only
+            # records still feed the CVE-exact path.
+            try:
+                payload = json.loads(record_text)
+            except json.JSONDecodeError:
+                payload = None
+            if isinstance(payload, dict):
+                aliases = payload.get("aliases")
+                if isinstance(aliases, list):
+                    alias_text = ",".join(str(a) for a in aliases)
+                else:
+                    alias_text = str(aliases or "")
+                for cve in CVE_PATTERN.findall(alias_text):
+                    mapping_pairs.add((str(cve).upper(), euvd_id_text))
             if len(batch) >= 5000:
                 database.executemany(
                     "INSERT INTO local_products VALUES (?, ?, ?, ?, ?, ?)",
@@ -244,6 +310,14 @@ def _build_snapshot(source: Path, output: Path, temporary: Path) -> dict[str, An
                 batch,
             )
             inserted_products += len(batch)
+        # Re-insert reference pairs plus alias-backfilled pairs into the rebuilt
+        # lean table; PRIMARY KEY dedups against the reference set. Covers the
+        # ~4.68% of records whose alias CVEs never reached the reference mapping.
+        database.executemany(
+            "INSERT OR IGNORE INTO cve_euvd_mapping(cve_id, euvd_id) VALUES (?, ?)",
+            sorted(mapping_pairs),
+        )
+        cve_mapping_backfill_count = len(mapping_pairs) - len(existing_mapping_pairs)
 
         database.execute(
             "CREATE INDEX idx_local_products_product ON local_products(product_key)"
@@ -311,6 +385,7 @@ def _build_snapshot(source: Path, output: Path, temporary: Path) -> dict[str, An
                 scalar(database, "SELECT COUNT(*) FROM known_exploited") or 0
             ),
             "product_index_count": str(inserted_products),
+            "cve_mapping_backfill_count": str(cve_mapping_backfill_count),
             "invalid_record_count": str(invalid_records),
             "last_successful_to_date": state.get("last_successful_to_date", ""),
             "reference_data_freshness": state.get(
