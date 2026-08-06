@@ -37,3 +37,20 @@
 - **CPE/purl 无用**（0.004%）——EUVD 是文本语料，靠模糊匹配
 
 **对使用的建议**：优先用带 CVE 的 SBOM（grype 类工具，非纯 syft）走 CVE 精确路径；纯组件 SBOM 需先做噪声治理（过滤 n/a + vendor 联合）。
+
+## 5. 优化实施记录（2026-08-06）
+
+优化方向 §3 的 **#1（产品噪声治理）+ #2（CVE backfill）已实施并部署**到生产 consumer snapshot。
+
+| 项 | 落点 | 实效（真实 852MB mirror DB） |
+|---|---|---|
+| #1a 过滤 n/a 占位产品 | `build_local_euvd_snapshot.py:product_rows` | local_products 1,113,450 → **969,305**（-144,145 行，0 残留） |
+| #2 CVE mapping 回填 | 同上（遍历 record aliases） | mapping 355,046 → **372,484**（+17,438，**CVE 路径 95.32% → 100%**） |
+| #1b vendor+product 联合 | `matcher.py:_query_local_product` | joint/fallback/none 三态，无结果回退（设计约束 #5） |
+| #1c 产品候选 top-N cap | `matcher.py:match_components` | 默认 50，CVE 精确路径不截断，sort 已浮已匹配到前 |
+
+附带：consumer `cve_euvd_mapping` 表 5→2 列（lean），snapshot 更小；`tests/conftest.py` 修复本地 `DATA_DIR`/`OUTPUT_DIR` 容器路径依赖。
+
+回归：Web 121 passed（+6 新测试）、镜像 47 passed。提交 `08b5828`。
+
+**边界重测（部署后）**：CVE 精确路径已达 **100%**（带 CVE 的 SBOM 零静默漏）；产品候选路径噪声 **-13%** + vendor 联合收窄 + top-N 防 8830 候选爆炸，真实 syft 场景可用性显著提升。剩余 §3 的 #3（版本 normalizer 49%→65-70%）、#4（Windows SKU 归一化）、#5（放弃 CPE）未动，作为后续迭代。
