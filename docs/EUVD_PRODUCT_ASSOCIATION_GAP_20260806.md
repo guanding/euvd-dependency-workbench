@@ -54,11 +54,26 @@ EUVD（ENISA 欧洲漏洞库）上游的**CVE→product 关联不完整**：
 
 1. **SBOM 带 CVE（VEX-enriched）**：上游 SBOM 工具链 enrich 已知 CVE（如从 NVD/OSV 预关联）→ matcher CVE 精确路径命中。但需 SBOM 生成时查 CVE 库。
 2. **EUVD 补 product 关联**：上游数据治理（ENISA 补 `local_products`）。不可控（依赖 ENISA）。
-3. **OSV 第二信任锚**（推荐）：OSV 的 `affected.range` 提供产品级精确版本范围匹配，补 EUVD 关联 gap。SBOM Workbench `SBOM_TOOL_LANDSCAPE_UPGRADE_PLAN.md` 已识别此方向：「EUVD 单源命中精度不足 → OSV 离线快照第二信任锚，绝不因 OSV 未命中放行 EUVD 命中（双源收紧，不放松）」。
+3. **OSV 第二信任锚**：原假设 OSV `affected.range` 补 EUVD 关联 gap。**实证推翻（对嵌入式/固件不成立）**——OSV API 验证（2026-08-06）：
+   - CVE-2018-16523（FreeRTOS）：OSV 有 severity（CVSS 3.0 HIGH）但 `affected.package` **缺失**，GIT range `0..?`（fixed 不精确）
+   - CVE-2019-14236（STM32L4 PCROP CRITICAL 9.8）：OSV **几乎空**（无 summary/severity/affected）
+   - 嵌入式 CVE 在 OSV 覆盖同样弱（NVD→OSV sync 未结构化 affected）。OSV 突破对主流语言（PyPI/Go/npm）有效，对嵌入式/固件无效。
+   - 嵌入式漏洞完整性需：NVD（最全 CPE-based）+ 工业漏洞情报（ICS-CERT 等）+ CPE/VEX 补全，非 OSV 单独能补。
 
-## 印证 landscape plan
+## 印证 + 部分修正 landscape plan
 
-`SBOM_TOOL_LANDSCAPE_UPGRADE_PLAN.md` §3 P1：「**EUVD 单源命中精度不足**（包名布尔命中，不校验 affected version range）→ OSV 离线快照作第二信任锚」。本次测试**精确证实**：根因是 CVE→product 关联 gap（43.6%），不是数据缺失。OSV 的 `affected.range` 正好补这个 gap。
+`SBOM_TOOL_LANDSCAPE_UPGRADE_PLAN.md` §3 P1 假设「EUVD 单源命中精度不足 → OSV affected.range 补」。本次测试**精确证实根因是 CVE→product 关联 gap（43.6%）**，但**部分推翻 OSV 突破**：OSV 对主流语言的 affected.range 完整有效，对嵌入式/固件（FreeRTOS/STM32）同样覆盖弱。landscape plan 的 OSV 方向需加"嵌入式需 NVD + 工业情报 + CPE"限定。
+
+## 嵌入式 SBOM 的端到端 gap 图景
+
+本次测试（2026-08-06）实证嵌入式产品的 CRA 漏洞完整性是**两段 gap**：
+
+| 阶段 | gap | 工具 |
+|---|---|---|
+| SBOM 生成 | syft/cdxgen 对 STM32CubeMX 裸固件 0 组件 | 见 EMBEDDED_SBOM_BLIND_SPOT |
+| 漏洞匹配 | EUVD 关联 gap 43.6% + OSV affected 不全 + NVD 靠 CPE | 本文档 |
+
+突破需端到端：领域 cataloger（生成）+ 多漏洞源 + CPE/VEX（匹配），单一工具/源都不够。
 
 ## 对方案 A 的影响
 
