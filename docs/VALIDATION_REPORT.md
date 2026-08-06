@@ -40,7 +40,7 @@
 
 ## 5. 优化实施记录（2026-08-06）
 
-优化方向 §3 的 **#1（产品噪声治理）+ #2（CVE backfill）已实施并部署**到生产 consumer snapshot。
+优化方向 §3 的 **#1（产品噪声治理）+ #2（CVE backfill）已实施并部署**到生产 consumer snapshot；**#3（版本 normalizer）已实施**（matcher 逻辑层，代码提交，重启 web 服务生效，无需重建 snapshot）。
 
 | 项 | 落点 | 实效（真实 852MB mirror DB） |
 |---|---|---|
@@ -48,9 +48,15 @@
 | #2 CVE mapping 回填 | 同上（遍历 record aliases） | mapping 355,046 → **372,484**（+17,438，**CVE 路径 95.32% → 100%**） |
 | #1b vendor+product 联合 | `matcher.py:_query_local_product` | joint/fallback/none 三态，无结果回退（设计约束 #5） |
 | #1c 产品候选 top-N cap | `matcher.py:match_components` | 默认 50，CVE 精确路径不截断，sort 已浮已匹配到前 |
+| #3 版本 normalizer | `matcher.py:version_is_affected` | None -1,328；保守，见下方诚实评估 |
 
 附带：consumer `cve_euvd_mapping` 表 5→2 列（lean），snapshot 更小；`tests/conftest.py` 修复本地 `DATA_DIR`/`OUTPUT_DIR` 容器路径依赖。
 
-回归：Web 121 passed（+6 新测试）、镜像 47 passed。提交 `08b5828`。
+回归：Web 131 passed（+16 新测试）、镜像 47 passed。提交 `08b5828`（#1+#2）/ `f8efda4`（#3）。
 
-**边界重测（部署后）**：CVE 精确路径已达 **100%**（带 CVE 的 SBOM 零静默漏）；产品候选路径噪声 **-13%** + vendor 联合收窄 + top-N 防 8830 候选爆炸，真实 syft 场景可用性显著提升。剩余 §3 的 #3（版本 normalizer 49%→65-70%）、#4（Windows SKU 归一化）、#5（放弃 CPE）未动，作为后续迭代。
+**边界重测（部署后）**：
+- **CVE 精确路径 100%**（带 CVE 的 SBOM 零静默漏）— 最大短板已补齐
+- **产品候选路径**：噪声 -13% + vendor 联合收窄 + top-N 防 8830 候选爆炸，真实 syft 场景可用性显著提升
+- **#3 版本判定（诚实评估）**：保守 fuzzy 救援救回 1,328 个真实可判定 expression（此前 None 现确定 True/False，零误判）。**未达 49%→65-70% 目标**——EUVD 的 51% prose 中大量是 `n/a`/`unknown` 占位 + 模糊人类描述（无机器可解析版本范围），保守可救的（有明确范围语义）仅 ~0.14%；激进救 placeholder/fixed-in/bare-product 会冒误判 True 牵连无关旧版本的风险，违反"宁可待核验不可误报"原则，故保守不动。
+
+**剩余 §3 backlog**（价值递减，后续迭代）：#4（Windows SKU 归一化，仅 Windows 场景）、#5（放弃 CPE 基础设施，0.004% 覆盖的死代码清理）。
