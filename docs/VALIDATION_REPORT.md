@@ -109,3 +109,13 @@ CRA 合规证据包：per-job ZIP（manifest.json + evidence.json + evidence.xls
 测试：Web 150 passed（138 Phase A + 12 Phase B：audit chain 5 / builder 5 / writers 2）。app.js 语法 OK。
 
 已知限制：(1) audit chain prev_hash 全局，in-scope 首事件可能引用项目外事件（chain_verify_result 为全局校验，audit_trail.json README 说明）；(2) cases 表可能空（scanner-only），judgments=[] + disclaimer；(3) endpoint 薄层未加 TestClient 集成测试（builder/writers 12 测覆盖 + 全套 150 无回归，fail-closed 逻辑薄，surgical）。
+
+### 5.4 Phase C 工程整洁收尾（2026-08-06，调查后 skip）
+
+两个子任务调查后均「前提有问题/边际」，不 brute force（同 #5 原则：宁可待核验不可误报 + surgical）：
+
+**float 版本丢尾零**：openpyxl 本质限制。数字格式 cell 在 Excel 端存 float（"1.10"→1.1），原始 string 丢失；per-cell 文本读取需绕过 openpyxl（zip + sheet XML parse），工作量大且边缘。客户模板 PRO-03B 版本列默认文本格式（`number_format='@'`）→ openpyxl 读 str（保留尾零），仅客户不按模板输数字到通用列才触发 → warn ROI 低。保持现状（parsing-evidence §5 已记录此已知限制）。
+
+**#4 Windows SKU 归一化**：当前 snapshot 70050 distinct products / Windows 114127 行，碎片化确认（Windows / Windows Server / Server Core / Version 变体各独立 product_key）。但合并会**误报**——Core vs 非 Core、不同 Version 是真实的不同受影响产品（CVE 受影响范围不同），合并扩大命中违反 #5「宁可待核验不可误报」。候选噪声已由 #1c top-N cap（50）控制。
+
+**结论：Phase C skip，无代码改动。** 两个子任务前提有问题（float 本质限制 / Windows 合并误报），保持现状 + 文档说明。
