@@ -309,6 +309,45 @@ select:focus-visible {
   color: #f06b73;
 }
 
+/* Phase A: always-visible ops alert badges in the header. */
+.alert-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.alert-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid #52647b;
+  color: #d7e0eb;
+}
+
+.alert-badge i {
+  width: 13px;
+  height: 13px;
+}
+
+.alert-badge.warning {
+  color: #f0c64f;
+  border-color: rgba(240, 198, 79, 0.5);
+  background: rgba(240, 198, 79, 0.1);
+}
+
+.alert-badge.danger {
+  color: #f06b73;
+  border-color: rgba(240, 107, 115, 0.5);
+  background: rgba(240, 107, 115, 0.1);
+}
+
 .euvd-catalog-filter {
   display: inline-flex;
   align-items: center;

@@ -63,6 +63,7 @@ const elements = {
   sourceDot: document.getElementById("sourceDot"),
   sourceText: document.getElementById("sourceText"),
   sourceMeta: document.getElementById("sourceMeta"),
+  alertBadges: document.getElementById("alertBadges"),
   projectNavCount: document.getElementById("projectNavCount"),
   dashboardTimestamp: document.getElementById("dashboardTimestamp"),
   dashboardMetrics: document.getElementById("dashboardMetrics"),
@@ -322,6 +323,48 @@ function renderEuvdMeta(status) {
   if (status.known_exploited_count) detail.push(`KEV：${formatNumber(status.known_exploited_count)}`);
   const pill = document.getElementById("sourcePill");
   if (pill) pill.title = `公开情报来源：ENISA EUVD 与 EU/CISA KEV\n${detail.join("\n")}`;
+}
+
+// Phase A: ops alert badges (orchestrator / data freshness / ENISA egress).
+// pollOpsAlerts() fetches /api/euvd/sync-status every 60s and renders up to 3
+// always-visible header badges so degradation is not buried inside the Art.14 view.
+function renderAlertBadges(status) {
+  const root = elements.alertBadges;
+  if (!root) return;
+  const badges = [];
+  if (status && status.orchestrator_available === false) {
+    badges.push({ cls: "alert-badge danger", icon: "server-off", text: "编排器未运行" });
+  }
+  const age = status && typeof status.data_age_days === "number" ? status.data_age_days : null;
+  if (age !== null) {
+    if (age >= 7) {
+      badges.push({ cls: "alert-badge danger", icon: "alert-triangle", text: `数据过期 ${age} 天` });
+    } else if (age >= 3) {
+      badges.push({ cls: "alert-badge warning", icon: "clock", text: `数据滞后 ${age} 天` });
+    }
+  }
+  const egress = status ? status.enisa_egress_status : null;
+  if (egress === "blocked") {
+    badges.push({
+      cls: "alert-badge danger",
+      icon: "shield-alert",
+      text: `ENISA 被封（连续 ${status.enisa_consecutive_failures ?? "?"} 次）`,
+    });
+  } else if (egress === "degraded") {
+    badges.push({ cls: "alert-badge warning", icon: "shield-alert", text: "ENISA 出口受限" });
+  }
+  root.innerHTML = badges
+    .map((b) => `<span class="${b.cls}"><i data-lucide="${b.icon}" aria-hidden="true"></i>${escapeHtml(b.text)}</span>`)
+    .join("");
+  if (window.lucide) lucide.createIcons();
+}
+
+async function pollOpsAlerts() {
+  try {
+    renderAlertBadges(await api("/api/euvd/sync-status"));
+  } catch {
+    /* silent — alert badges are best-effort */
+  }
 }
 
 // freshness 枚举实际值（Mirror sync_state）：fresh / degraded_local_snapshot /
@@ -1747,4 +1790,6 @@ elements.reviewStage.addEventListener("change", () => {
 });
 
 initIcons();
+pollOpsAlerts();
+window.setInterval(pollOpsAlerts, 60000);
 Promise.all([checkEuvd(), loadDashboard(), loadProjects()]);

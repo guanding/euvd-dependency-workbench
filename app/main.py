@@ -62,6 +62,10 @@ OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", "/app/outputs"))
 # (constraint #3: the Web workbench is not the synchronization authority).
 SYNC_REQUEST_PATH = DATA_DIR / "sync-request.json"
 SYNC_STATUS_PATH = DATA_DIR / "sync-status.json"
+# Phase A: guardian heartbeat TTL — the Web treats the mirror_ops daemon as
+# alive while now - guardian_heartbeat_at < this (seconds). Tuned to exceed the
+# longest single sync subprocess; a hung daemon past this is a real alert.
+GUARDIAN_HEARTBEAT_TTL_SECONDS = int(os.getenv("GUARDIAN_HEARTBEAT_TTL_SECONDS", "900"))
 MAX_COMPONENTS = int(os.getenv("MAX_COMPONENTS", "2000"))
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 MAX_CYCLONEDX_UPLOAD_BYTES = 10 * 1024 * 1024
@@ -827,24 +831,44 @@ async def request_mirror_sync() -> dict[str, Any]:
     return {"requested": True, "request_id": request["request_id"]}
 
 
+def _parse_status_time(value: Any) -> datetime | None:
+    """Parse an ISO-8601 status timestamp, normalizing naive → UTC. None if unparseable."""
+    try:
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment
+
+
 def _orchestrator_alive(status: dict[str, Any], max_age_seconds: int = 300) -> bool:
     """True if the orchestrator is actively running or finished/failed recently.
 
     A stale sync-status.json left by a dead/stuck ops container must NOT report
     the orchestrator as available (the old `setdefault(True)` did, whenever the
     file merely existed).
+
+    Phase A: guardian_heartbeat_at (refreshed by mirror_ops every poll cycle) is
+    the authoritative liveness signal — when present, freshness within
+    GUARDIAN_HEARTBEAT_TTL_SECONDS decides alive/dead. When absent (older Mirror
+    build), fall back to the finished_at heuristic.
     """
     if status.get("state") == "running":
         return True
+    heartbeat = status.get("guardian_heartbeat_at")
+    if heartbeat:
+        moment = _parse_status_time(heartbeat)
+        if moment is not None:
+            return (
+                datetime.now(timezone.utc) - moment
+            ).total_seconds() < GUARDIAN_HEARTBEAT_TTL_SECONDS
     finished = status.get("finished_at")
     if not finished:
         return False
-    try:
-        moment = datetime.fromisoformat(str(finished).replace("Z", "+00:00"))
-    except ValueError:
+    moment = _parse_status_time(finished)
+    if moment is None:
         return False
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=timezone.utc)
     return (datetime.now(timezone.utc) - moment).total_seconds() < max_age_seconds
 
 

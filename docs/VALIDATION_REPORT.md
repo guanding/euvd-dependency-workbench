@@ -71,3 +71,22 @@
 - **synthesis 推荐 `proceed-partial`**（删 parse_cpe + enrich CPE 分支 + CpeParsingTests），但**决定保留**：删除是非对称风险——省 ~16 行代码，却引入 #5 风险（CPE-only 组件静默放弃识别，哪怕 0.004%）+ 跨文件协调（`Component.cpe` 字段级联 spreadsheet_io 9 处/main 2 处/sbom_evidence 3 处）+ 身份覆盖 KPI 回归。在「宁可待核验不可误报」+「surgical changes」下，保留零成本零风险，删除收益边际。
 
 **结论：#5 关闭，不改代码。** CPE 保持最小化组件归一化角色。
+
+### 5.2 Phase A 运维可靠性加固（2026-08-06）
+
+单文件三告警架构：3 个运维告警（orchestrator 存活 / 数据时效 / ENISA 403）都通过既有 `sync-status.json`（Mirror 写、Web 读）传递，无新文件、无 Web→Mirror 写，#3 完整。Mirror 在 status 写位点 stamp 新字段；Web `/api/euvd/sync-status` 透传；前端 header `#alertBadges` 60s 轮询渲染。
+
+| 子任务 | 落点 | 实效 |
+|---|---|---|
+| A1 守护心跳 | `mirror_ops.write_status` 注入 `guardian_heartbeat_at`（每写刷新）+ 契约 docstring | watch 每 5s poll 刷新；4 stage 转换推进；Web TTL 判活 |
+| A2 数据时效 | `mirror_ops.compute_data_age`（`max(updated_raw)`）+ `FRESHNESS_WARN_DAYS=3`/`STALE_DAYS=7`（env）+ completed stamp `data_age_days`/`snapshot_data_date` | 前端 badge <3 ok / 3-6 滞后 / >=7 过期；alert_watch 同阈值 |
+| A3 ENISA 403 计数 | `euvd_sync._record_egress_failure/success`（sync_state KV，跨 run 持久）+ sync() except typed 403 increment + completed 清零；`mirror_ops.enisa_egress_status` 翻译（0 ok / 1-2 degraded / >=3 blocked）+ completed/failed stamp | 告警从子串匹配提升为 typed 字段；recurrence 语义 |
+| A4 Web 判活 | `main._orchestrator_alive` 心跳优先（`GUARDIAN_HEARTBEAT_TTL_SECONDS=900` env），无心跳 fallback finished_at（向后兼容旧 Mirror） | 心跳过期 → orchestrator_available=False |
+| A5 前端 badges | `index.html #alertBadges` + `app.js renderAlertBadges/pollOpsAlerts(60s)` + styles.css | 3 告警 header 常驻（不再埋 Art.14 view） |
+| A6 alert_watch typed | `check_signals` 加 `data_stale_days` 参数 + data_age 规则 + enisa_egress_status typed 规则 | operator sink（log/macos/webhook）消费同字段 |
+
+测试：Mirror 63 passed（47 基线 + 16 新）/ Web 138 passed（131 基线 + 7 新 `test_orchestrator_health`）/ app.js 语法 OK。
+
+部署：Mirror 改动需重启 `mirror_ops watch`；Web 改动需重启 uvicorn + 浏览器刷新。snapshot 无需重建（A3 计数器用既有 `sync_state` 表，无 DDL）。
+
+已知限制（plan 风险，接受）：(1) 单 subprocess >900s（如大增量重建）→ Web 误报 orchestrator-down（4 stage 推进心跳缓解；超 TTL 的 hung 是真问题值得告警，后台线程心跳留后续）；(2) `data_age_days` 在 ENISA 无新漏洞时显示陈旧（上游空窗非 sync 故障），同时显示 `snapshot_data_date` 供辨别；(3) 403 计数器在 egress 修复但无成功 sync 时不清零，下次成功 sync 自动清零。
