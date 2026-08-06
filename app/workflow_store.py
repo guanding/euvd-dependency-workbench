@@ -358,6 +358,61 @@ class WorkflowStore:
             ),
         )
 
+
+    def verify_audit_chain(self) -> dict[str, Any]:
+        """Recompute the GLOBAL audit_events hash chain end-to-end (the same
+        algorithm _audit uses) and report the first break.
+
+        Returns {verified, broken_at, event_count, verified_at}. A deleted,
+        reordered, or tampered row breaks the chain at broken_at (its id).
+        Production counterpart of the chain check that lived only in tests.
+        """
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT id, payload_json, payload_sha256 "
+                "FROM audit_events ORDER BY id ASC"
+            ).fetchall()
+        previous = ""
+        for row in rows:
+            expected = hashlib.sha256(
+                f"{previous}:{row['payload_json']}".encode("utf-8")
+            ).hexdigest()
+            if row["payload_sha256"] != expected:
+                return {
+                    "verified": False,
+                    "broken_at": int(row["id"]),
+                    "event_count": len(rows),
+                    "verified_at": utc_now(),
+                }
+            previous = row["payload_sha256"]
+        return {
+            "verified": True,
+            "broken_at": None,
+            "event_count": len(rows),
+            "verified_at": utc_now(),
+        }
+
+    def export_audit_trail(self, job_id: str | None = None) -> list[dict[str, Any]]:
+        """Return audit_events in id ASC (chain order) with all 8 columns.
+
+        When job_id is given, filter to that job's cases (in-scope); otherwise
+        the full table. NOTE: prev_hash is GLOBAL — an in-scope first row may
+        reference an out-of-scope event; verify_audit_chain checks the whole
+        chain and the evidence bundle documents this scoping.
+        """
+        sql = (
+            "SELECT id, case_id, event_type, actor, payload_json, "
+            "payload_sha256, prev_hash, created_at FROM audit_events"
+        )
+        params: tuple[Any, ...] = ()
+        if job_id is not None:
+            sql += " WHERE case_id IN (SELECT id FROM cases WHERE job_id = ?)"
+            params = (job_id,)
+        sql += " ORDER BY id ASC"
+        with self.connect() as connection:
+            rows = connection.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
+
     @staticmethod
     def _pin_hash(pin: str, salt: bytes) -> str:
         return hashlib.scrypt(

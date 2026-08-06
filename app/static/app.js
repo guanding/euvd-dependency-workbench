@@ -183,6 +183,7 @@ const elements = {
   projectTitle: document.getElementById("projectTitle"),
   projectSubtitle: document.getElementById("projectSubtitle"),
   downloadReportButton: document.getElementById("downloadReportButton"),
+  downloadEvidenceButton: document.getElementById("downloadEvidenceButton"),
   progressPanel: document.getElementById("progressPanel"),
   progressStage: document.getElementById("progressStage"),
   progressPercent: document.getElementById("progressPercent"),
@@ -975,6 +976,10 @@ function renderProject(job) {
   ].join("");
   elements.downloadReportButton.classList.toggle("hidden", !job.report_url);
   elements.downloadReportButton.href = job.report_url || "#";
+  elements.downloadEvidenceButton.classList.toggle("hidden", job.status !== "completed");
+  elements.downloadEvidenceButton.href = job.id
+    ? `/api/jobs/${encodeURIComponent(job.id)}/evidence-package`
+    : "#";
   renderProjectDetail();
 }
 

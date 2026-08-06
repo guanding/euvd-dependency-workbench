@@ -21,7 +21,7 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -45,6 +45,11 @@ from .matcher import (
 )
 from .spreadsheet_io import build_components, read_sbom, write_report
 from .vex import parse_vex_bytes, write_vex
+from .evidence_package import (
+    build_evidence_package_payload,
+    write_evidence_package_zip,
+    write_evidence_xlsx,
+)
 from .workflow_store import WorkflowStore
 
 
@@ -1512,6 +1517,49 @@ async def download_report(job_id: str) -> FileResponse:
         report_path,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename=job["report_name"],
+    )
+
+
+@app.get("/api/jobs/{job_id}/evidence-package")
+async def download_evidence_package(job_id: str, format: str = "zip") -> Response:
+    """Phase B compliance evidence bundle (manifest + evidence.json + evidence.xlsx
+    + audit_trail.json as ZIP; or ?format=json / xlsx). Fail-closed: if the SBOM
+    re-hash does not match the recorded source_sha256, returns 422 rather than
+    shipping a bundle whose integrity root is broken."""
+    path = _job_path(job_id)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="任务不存在")
+    job = _read_json(path)
+    if job.get("status") != "completed":
+        raise HTTPException(status_code=409, detail="证据包需任务完成后生成")
+    payload = build_evidence_package_payload(job, WORKFLOW_STORE, UPLOAD_DIR)
+    integrity = payload.get("sbom_integrity") or {}
+    if integrity.get("rehash_sha256") is not None and integrity.get("match") is False:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"SBOM 完整性校验失败：rehash {integrity.get('rehash_sha256')} "
+                f"≠ source {integrity.get('source_sha256')}"
+            ),
+        )
+    safe_name = re.sub(r"[^0-9A-Za-z._-]", "_", job.get("project_name") or job_id)
+    fmt = (format or "zip").lower()
+    if fmt == "json":
+        return JSONResponse(payload)
+    if fmt == "xlsx":
+        return Response(
+            content=write_evidence_xlsx(payload),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f'attachment; filename="EUVDevidence_{safe_name}.xlsx"'
+            },
+        )
+    return Response(
+        content=write_evidence_package_zip(payload),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="EUVDevidence_{safe_name}.zip"'
+        },
     )
 
 

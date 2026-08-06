@@ -90,3 +90,22 @@
 部署：Mirror 改动需重启 `mirror_ops watch`；Web 改动需重启 uvicorn + 浏览器刷新。snapshot 无需重建（A3 计数器用既有 `sync_state` 表，无 DDL）。
 
 已知限制（plan 风险，接受）：(1) 单 subprocess >900s（如大增量重建）→ Web 误报 orchestrator-down（4 stage 推进心跳缓解；超 TTL 的 hung 是真问题值得告警，后台线程心跳留后续）；(2) `data_age_days` 在 ENISA 无新漏洞时显示陈旧（上游空窗非 sync 故障），同时显示 `snapshot_data_date` 供辨别；(3) 403 计数器在 egress 修复但无成功 sync 时不清零，下次成功 sync 自动清零。
+
+### 5.3 Phase B 合规交付物强化（2026-08-06）
+
+CRA 合规证据包：per-job ZIP（manifest.json + evidence.json + evidence.xlsx + audit_trail.json），regulator/auditor 可独立打开。复用既有 art14 三层模式（builder + writers + extension endpoint）+ spreadsheet_io._safe_cell。
+
+| 组件 | 落点 | 内容 |
+|---|---|---|
+| audit chain 导出 | `workflow_store.verify_audit_chain`（移植 test loop 到生产）+ `export_audit_trail(job_id)` | 全局 hash chain 校验 {verified,broken_at,event_count} + job in-scope audit_events（id ASC，8 列含 prev_hash/payload_json）|
+| builder | `app/evidence_package.build_evidence_package_payload` | project_identity / sbom_integrity(rehash) / data_provenance / matches[] / unmatched / cra_reportable_judgments[] / audit_trail / chain_verify / disclaimer |
+| CRA reportable | 复用 `art14_decision=='reportable'` + 5-leg basis（applicability / exploitation_evidence / awareness / reliable_evidence_rows / four_eye_approval）+ legal_basis 条款号引用（Art.13/14, 3(8), 3(42), 14(1)） | KEV≠Art.14 disclaimer（`public_signal_is_not_art14_decision`）|
+| writers | `write_evidence_xlsx`（4 sheets，_safe_cell）/ `write_evidence_package_zip`（manifest per-entry sha256）| 复用 _safe_cell（csv-injection =/+/-/@ + XML 控制字符）|
+| endpoint | `GET /api/jobs/{job_id}/evidence-package[?format=zip|json|xlsx]` | 复用 download_report 守卫；fail-closed：SBOM rehash mismatch→422 |
+| 前端 | 项目详情「证据包」按钮（复用 downloadReport `<a>` 模式）| completed 任务可见 |
+
+设计取舍（vs design agent 提案）：6→4 文件 zip（pre7/sbom_snapshot 合入 evidence.json）；audit chain in-scope（客户隔离）+ global verify + README 说明全局链语义（避免跨项目泄露）。legal_basis 仅引用条款号，不编造释义（符合「条文释义以官方文本为准」）。
+
+测试：Web 150 passed（138 Phase A + 12 Phase B：audit chain 5 / builder 5 / writers 2）。app.js 语法 OK。
+
+已知限制：(1) audit chain prev_hash 全局，in-scope 首事件可能引用项目外事件（chain_verify_result 为全局校验，audit_trail.json README 说明）；(2) cases 表可能空（scanner-only），judgments=[] + disclaimer；(3) endpoint 薄层未加 TestClient 集成测试（builder/writers 12 测覆盖 + 全套 150 无回归，fail-closed 逻辑薄，surgical）。
