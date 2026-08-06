@@ -153,6 +153,23 @@ class EvidencePayloadBuilderTests(unittest.TestCase):
         self.assertEqual(payload["project_identity"]["project_name"], "Gateway")
         self.assertEqual(payload["summary"]["component_count"], 2)
 
+    def test_sbom_source_declarations_flow_through_payload(self) -> None:
+        job = self._job()
+        job["sbom_source_declarations"] = {
+            "classification": "SELF_TEST_NOT_CUSTOMER_EVIDENCE",
+            "direction": "SBOM_TO_EUVD_ONLY",
+            "source_binding_status": "CALLER_DECLARED_NOT_INDEPENDENTLY_VERIFIED",
+        }
+        payload = build_evidence_package_payload(job, self.store, self.uploads)
+        self.assertEqual(
+            payload["sbom_source_declarations"]["classification"],
+            "SELF_TEST_NOT_CUSTOMER_EVIDENCE",
+        )
+        # Jobs without a handoff receipt carry an empty declarations dict so
+        # the overview sheet and downstream consumers see nothing to render.
+        payload_default = build_evidence_package_payload(self._job(), self.store, self.uploads)
+        self.assertEqual(payload_default["sbom_source_declarations"], {})
+
     def test_actively_exploited_derivation(self) -> None:
         # actively_exploited = KEV signal OR exploited_since present (matcher rule)
         matches = [

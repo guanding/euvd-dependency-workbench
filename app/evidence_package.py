@@ -89,6 +89,7 @@ def build_evidence_package_payload(
         "audit_trail": audit_trail,
         "chain_verify_result": chain_verify,
         "pre7_evidence_summary": job.get("pre7_evidence_summary"),
+        "sbom_source_declarations": job.get("sbom_source_declarations") or {},
         "disclaimer": (
             "KEV / actively_exploited 公开信号 ≠ CRA Art.14 reportable。reportable "
             "判定仅由人工 Art.14 案例经四眼审批（technical + compliance）后 stamp。"
@@ -290,6 +291,22 @@ def _overview_sheet(ws: Any, payload: dict[str, Any]) -> None:
         ("审计事件数", cv.get("event_count")),
         ("免责声明", payload.get("disclaimer")),
     ]
+    declarations = payload.get("sbom_source_declarations") or {}
+    if declarations:
+        # Surface the candidate-SBOM boundary right after the integrity check
+        # so a regulator opening the workbook sees classification/provenance
+        # alongside the hash, before any CRA-reportable judgment.
+        insert_at = next(
+            (i for i, (k, _) in enumerate(rows) if k == "SBOM 完整性匹配"),
+            len(rows) - 1,
+        ) + 1
+        rows[insert_at:insert_at] = [
+            ("SBOM 来源声明", None),
+            ("SBOM 分类", declarations.get("classification")),
+            ("SBOM provenance", declarations.get("source_binding_status")),
+            ("SBOM 单向契约", declarations.get("direction")),
+            ("SBOM 权威边界", declarations.get("authority_boundary")),
+        ]
     for i, (key, val) in enumerate(rows, start=1):
         c1 = ws.cell(row=i, column=1, value=_safe_cell(key))
         c1.font = Font(bold=True)

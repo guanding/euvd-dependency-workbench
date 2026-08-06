@@ -169,6 +169,8 @@ const elements = {
   customerName: document.getElementById("customerName"),
   fileInput: document.getElementById("fileInput"),
   dropZone: document.getElementById("dropZone"),
+  receiptInput: document.getElementById("receiptInput"),
+  receiptZone: document.getElementById("receiptZone"),
   uploadState: document.getElementById("uploadState"),
   uploadStateText: document.getElementById("uploadStateText"),
   mappingArea: document.getElementById("mappingArea"),
@@ -190,6 +192,8 @@ const elements = {
   progressBar: document.getElementById("progressBar"),
   progressDetail: document.getElementById("progressDetail"),
   progressAction: document.getElementById("progressAction"),
+  sbomSourceDeclarations: document.getElementById("sbomSourceDeclarations"),
+  declarationChips: document.getElementById("declarationChips"),
   projectMetrics: document.getElementById("projectMetrics"),
   projectQualityPanel: document.getElementById("projectQualityPanel"),
   projectQuality: document.getElementById("projectQuality"),
@@ -702,8 +706,11 @@ async function uploadFile(file) {
   elements.uploadState.classList.remove("hidden");
   elements.uploadStateText.textContent = `正在读取 ${file.name}`;
   elements.dropZone.classList.add("hidden");
+  elements.receiptZone.classList.add("hidden");
   const form = new FormData();
   form.append("file", file);
+  const receiptFile = elements.receiptInput.files[0];
+  if (receiptFile) form.append("receipt", receiptFile);
   try {
     const result = await api("/api/uploads/preview", { method: "POST", body: form });
     state.upload = result;
@@ -734,14 +741,20 @@ async function uploadFile(file) {
     const boundHint = bound.length
       ? ` · 已从${binding.source_sheet || "元数据页"}绑定 ${bound.join("、")}（可修改）`
       : "";
-    elements.previewMeta.textContent = `${result.row_count} 行 · 表头位于第 ${result.header_row} 行${boundHint}`;
+    const decl = binding?.evidence || {};
+    const declHint = decl.classification
+      ? ` · 来源声明 ${decl.classification}`
+      : "";
+    elements.previewMeta.textContent = `${result.row_count} 行 · 表头位于第 ${result.header_row} 行${boundHint}${declHint}`;
     elements.mappingArea.classList.remove("hidden");
   } catch (error) {
     showToast(error.message, "error");
     elements.dropZone.classList.remove("hidden");
+    elements.receiptZone.classList.remove("hidden");
   } finally {
     elements.uploadState.classList.add("hidden");
     elements.fileInput.value = "";
+    elements.receiptInput.value = "";
   }
 }
 
@@ -792,8 +805,10 @@ function resetImport({ keepMetadata = false } = {}) {
   state.upload = null;
   state.mapping = {};
   elements.dropZone.classList.remove("hidden");
+  elements.receiptZone.classList.remove("hidden");
   elements.mappingArea.classList.add("hidden");
   elements.fileInput.value = "";
+  elements.receiptInput.value = "";
   if (!keepMetadata) {
     elements.projectName.value = "";
     elements.projectVersion.value = "";
@@ -946,6 +961,7 @@ function renderProject(job) {
     formatDate(job.finished_at || job.created_at),
   ].join(" · ");
   renderProgress(job);
+  renderSourceDeclarations(job);
   const result = job.result;
   if (!result) {
     elements.projectMetrics.innerHTML = [
@@ -981,6 +997,32 @@ function renderProject(job) {
     ? `/api/jobs/${encodeURIComponent(job.id)}/evidence-package`
     : "#";
   renderProjectDetail();
+}
+
+function renderSourceDeclarations(job) {
+  const decl = job.sbom_source_declarations;
+  if (!decl || !Object.keys(decl).length) {
+    elements.sbomSourceDeclarations.classList.add("hidden");
+    return;
+  }
+  elements.sbomSourceDeclarations.classList.remove("hidden");
+  const chip = (label, value, tone = "") =>
+    value
+      ? `<span class="decl-chip ${tone}"><strong>${escapeHtml(label)}</strong>${escapeHtml(String(value))}</span>`
+      : "";
+  const status = decl.source_binding_status;
+  const provenance =
+    status === "DERIVED_FROM_VERIFIED_M3A_ROOT"
+      ? "三面 VERIFIED"
+      : status === "CALLER_DECLARED_NOT_INDEPENDENTLY_VERIFIED"
+        ? "单面 DECLARED"
+        : status || "";
+  elements.declarationChips.innerHTML = [
+    chip("分类", decl.classification, "decl-warning"),
+    chip("provenance", provenance, provenance === "三面 VERIFIED" ? "decl-success" : ""),
+    chip("单向契约", decl.direction, ""),
+    chip("组件数", decl.component_record_count, ""),
+  ].join("");
 }
 
 function renderProjectDetail() {

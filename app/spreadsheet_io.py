@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import re
@@ -244,6 +245,80 @@ def _extract_metadata_binding(workbook: Any) -> dict[str, Any] | None:
         "evidence": evidence,
         "raw": raw,
         "source_sheet": metadata_sheet.title,
+    }
+
+
+# SBOM Workbench handoff receipt boundary constants. These must match the
+# corresponding constants in euvd_handoff.py (offline-sbom-evidence-workbench);
+# any mismatch means the receipt is not a valid one-way handoff and must be
+# rejected fail-closed rather than silently accepted as a product SBOM.
+HANDOFF_CLASSIFICATION = "SELF_TEST_NOT_CUSTOMER_EVIDENCE"
+HANDOFF_AUTHORITY_BOUNDARY = "NO_SBOM_FACT_RELEASE_CONFORMITY_OR_REPORTING_AUTHORITY"
+HANDOFF_KEV_BOUNDARY = "KEV_PRESENCE_IS_PRIORITIZATION_ONLY_ABSENCE_IS_NOT_NON_EXPLOITATION_PROOF"
+HANDOFF_DIRECTION = "SBOM_TO_EUVD_ONLY"
+# Receipt fields carried forward as audit-only evidence. None is a product
+# identity field, so `fields` stays empty and the prefill chain is unaffected.
+# source_run_id is the workbench's internal run id, not a customer identifier.
+HANDOFF_EVIDENCE_KEYS = (
+    "classification",
+    "authority_boundary",
+    "kev_boundary",
+    "direction",
+    "reverse_fact_write",
+    "source_binding_status",
+    "source_profile_id",
+    "cyclonedx_sha256",
+    "component_record_count",
+    "purl_coverage",
+    "version_coverage",
+    "handoff_id",
+    "schema_version",
+    "source_run_id",
+)
+
+
+def _extract_handoff_binding(cyclonedx_path: Path) -> dict[str, Any] | None:
+    """Read a co-located SBOM Workbench receipt (``{stem}.receipt.json``) and
+    return a ``metadata_binding`` shaped like ``_extract_metadata_binding``:
+    boundary declarations go to ``evidence`` (audit-only), ``fields`` is empty
+    (a receipt carries no product identity), and ``source_sheet`` is
+    ``"receipt.json"`` so the existing prefill hint reads naturally.
+
+    Returns ``None`` when no receipt sits next to the CycloneDX file (plain
+    upload, behaviour unchanged). Raises ``ValueError`` on any boundary
+    mismatch so the caller (``upload_preview``) turns it into HTTP 400.
+    """
+    receipt_path = cyclonedx_path.with_name(f"{cyclonedx_path.stem}.receipt.json")
+    if not receipt_path.is_file():
+        return None
+    try:
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"receipt.json 解析失败: {exc}") from exc
+    if not isinstance(receipt, dict):
+        raise ValueError("receipt.json 必须是 JSON 对象")
+    if receipt.get("direction") != HANDOFF_DIRECTION:
+        raise ValueError("receipt direction 必须为 SBOM_TO_EUVD_ONLY")
+    if receipt.get("reverse_fact_write") is not False:
+        raise ValueError("receipt reverse_fact_write 必须为 false")
+    if receipt.get("classification") != HANDOFF_CLASSIFICATION:
+        raise ValueError("receipt classification 不符合 SELF_TEST 边界")
+    if receipt.get("authority_boundary") != HANDOFF_AUTHORITY_BOUNDARY:
+        raise ValueError("receipt authority_boundary 与既定边界不符")
+    if receipt.get("kev_boundary") != HANDOFF_KEV_BOUNDARY:
+        raise ValueError("receipt kev_boundary 与既定边界不符")
+    try:
+        actual_sha256 = hashlib.sha256(cyclonedx_path.read_bytes()).hexdigest()
+    except OSError as exc:  # pragma: no cover - filesystem race
+        raise ValueError(f"无法读取 cyclonedx 计算 sha256: {exc}") from exc
+    if receipt.get("cyclonedx_sha256") != actual_sha256:
+        raise ValueError("receipt cyclonedx_sha256 与上传的 cyclonedx 不匹配")
+    evidence = {key: receipt[key] for key in HANDOFF_EVIDENCE_KEYS if key in receipt}
+    return {
+        "fields": {},
+        "evidence": evidence,
+        "raw": dict(receipt),
+        "source_sheet": "receipt.json",
     }
 
 
@@ -618,6 +693,9 @@ def read_sbom(path: Path) -> dict[str, Any]:
         result = _read_csv(path)
     elif suffix == ".json":
         result = _read_cyclonedx(path)
+        handoff_binding = _extract_handoff_binding(path)
+        if handoff_binding is not None:
+            result["metadata_binding"] = handoff_binding
     else:
         raise ValueError("仅支持 .xlsx、.xlsm、.csv、.tsv 和 CycloneDX .json")
     result.setdefault("mapping", infer_mapping(result["headers"], result["rows"]))

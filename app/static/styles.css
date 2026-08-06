@@ -1422,3 +1422,48 @@ td strong {
     width: 100%;
   }
 }
+
+/* SBOM Workbench handoff: secondary receipt drop zone + declaration chips */
+.drop-zone-secondary {
+  min-height: auto;
+  padding: 14px 18px;
+  margin-top: 10px;
+  gap: 4px;
+  opacity: 0.9;
+}
+.drop-zone-secondary .drop-icon {
+  width: 30px;
+  height: 30px;
+}
+.drop-zone-secondary strong {
+  font-size: 13px;
+}
+.declaration-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.decl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  margin: 4px 8px 4px 0;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--surface);
+  border: 1px solid #93a2b5;
+  color: var(--ink);
+}
+.decl-chip strong {
+  font-weight: 600;
+  opacity: 0.65;
+}
+.decl-chip.decl-warning {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+.decl-chip.decl-success {
+  border-color: #10b981;
+  background: #ecfdf5;
+}

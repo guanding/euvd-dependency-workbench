@@ -1232,7 +1232,10 @@ async def export_srp_draft(
 
 
 @app.post("/api/uploads/preview")
-async def upload_preview(file: UploadFile = File(...)) -> dict[str, Any]:
+async def upload_preview(
+    file: UploadFile = File(...),
+    receipt: UploadFile | None = None,
+) -> dict[str, Any]:
     original_name = Path(file.filename or "sbom").name
     suffix = Path(original_name).suffix.casefold()
     if suffix not in ALLOWED_SUFFIXES:
@@ -1262,10 +1265,43 @@ async def upload_preview(file: UploadFile = File(...)) -> dict[str, Any]:
             digest.update(chunk)
             output.write(chunk)
 
+    # Optional SBOM Workbench handoff receipt (co-located as {id}.receipt.json
+    # so _extract_handoff_binding can find it next to the CycloneDX file).
+    # Source code never enters EUVD; the receipt only carries boundary
+    # declarations (classification / direction / hashes).
+    receipt_path: Path | None = None
+    if receipt is not None and receipt.filename:
+        receipt_path = UPLOAD_DIR / f"{upload_id}.receipt.json"
+        receipt_size = 0
+        try:
+            with receipt_path.open("wb") as r_out:
+                while r_chunk := await receipt.read(1024 * 1024):
+                    receipt_size += len(r_chunk)
+                    if receipt_size > MAX_UPLOAD_BYTES:
+                        r_out.close()
+                        raise HTTPException(
+                            status_code=413,
+                            detail=f"receipt 不能超过 {MAX_UPLOAD_BYTES // (1024 * 1024)} MB",
+                        )
+                    r_out.write(r_chunk)
+        except HTTPException:
+            target.unlink(missing_ok=True)
+            receipt_path.unlink(missing_ok=True)
+            raise
+        except OSError as exc:
+            target.unlink(missing_ok=True)
+            receipt_path.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"receipt 写入失败: {repair_text(exc)}",
+            ) from exc
+
     try:
         parsed = await asyncio.to_thread(read_sbom, target)
     except (ValueError, OSError, json.JSONDecodeError, RecursionError) as exc:
         target.unlink(missing_ok=True)
+        if receipt_path is not None:
+            receipt_path.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail=repair_text(exc)) from exc
 
     if len(parsed["rows"]) > MAX_COMPONENTS:
@@ -1419,6 +1455,10 @@ async def create_job(request: MatchRequest, background_tasks: BackgroundTasks) -
         "sbom_serial_number": (upload_record.get("parsed") or {}).get("serial_number") or "",
         "sbom_document_identity": (upload_record.get("parsed") or {}).get("document_identity") or {},
         "pre7_evidence_summary": (upload_record.get("parsed") or {}).get("pre7_evidence_summary") or {},
+        "sbom_source_declarations": (
+            ((upload_record.get("parsed") or {}).get("metadata_binding") or {}).get("evidence")
+            or {}
+        ),
         "project_name": repair_text(request.project_name)
         or _safe_name(upload_record["original_name"]),
         "project_version": repair_text(request.project_version),
