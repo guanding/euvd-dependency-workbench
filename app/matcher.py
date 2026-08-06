@@ -244,6 +244,7 @@ def version_is_affected(component_version: str, affected_text: str) -> tuple[boo
     version_pattern = r"[vV]?\d+(?:[._-][0-9A-Za-z]+)*"
 
     range_patterns = [
+        rf"from\s+({version_pattern})\s+up\s+to\s+(?:and\s+including\s+)?({version_pattern})",
         rf"(?:from\s+)?({version_pattern})\s+(?:through|to|-)\s+({version_pattern})",
         rf"({version_pattern})\s*<=\s*({version_pattern})",
     ]
@@ -297,6 +298,34 @@ def version_is_affected(component_version: str, affected_text: str) -> tuple[boo
         if comparison is None:
             return None, f"无法可靠比较版本: {expression}"
         return comparison == 0, f"EUVD 指定版本 {expression}"
+
+    # Fuzzy rescue (VALIDATION_REPORT §3 #3): prose the strict patterns
+    # above missed. Conservative — only rules with unambiguous range
+    # semantics decide True/False; bare product+version mentions, "fixed in",
+    # and placeholders stay None (human review), since guessing True there
+    # would over-include unrelated older releases.
+
+    # "V and later / above / newer" → affected >= V (lower inclusive).
+    later = re.search(
+        rf"({version_pattern})\s+and\s+(?:later|above|newer)",
+        lowered,
+    )
+    if later:
+        comparison = _compare_versions(version, later.group(1))
+        if comparison is not None:
+            return comparison >= 0, f"EUVD 标记 {later.group(1)} 及以后受影响"
+
+    # "before <filler words> V" — strict `before V` failed because product-
+    # name words sit between 'before' and the version (e.g. "before Linux
+    # kernel 2.4.20", "before version 6.16"); strip them.
+    before_filler = re.search(
+        rf"before\s+(?:[a-z][a-z]*\s+){{0,4}}({version_pattern})",
+        lowered,
+    )
+    if before_filler:
+        comparison = _compare_versions(version, before_filler.group(1))
+        if comparison is not None:
+            return comparison < 0, f"EUVD 版本上限不包含 {before_filler.group(1)}"
 
     return None, f"需人工核对 EUVD 版本表达式: {expression}"
 
