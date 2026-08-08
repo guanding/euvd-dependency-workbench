@@ -1290,6 +1290,9 @@ class WorkflowStore:
         actor: str,
         entry_count: int,
         warnings: list[str],
+        receipt_vex_document_sha256: str = "",
+        receipt_statements_canonical_sha256: str = "",
+        receipt_issuer_id: str = "",
     ) -> str:
         if vex_format not in VEX_SOURCES:
             raise ValueError("不支持的 VEX 格式")
@@ -1314,17 +1317,26 @@ class WorkflowStore:
                     utc_now(),
                 ),
             )
+            audit_payload: dict[str, Any] = {
+                "import_id": import_id,
+                "format": vex_format,
+                "source_sha256": source_sha256,
+                "entry_count": entry_count,
+            }
+            if receipt_vex_document_sha256:
+                audit_payload["receipt_vex_document_sha256"] = receipt_vex_document_sha256
+            if receipt_statements_canonical_sha256:
+                audit_payload["receipt_statements_canonical_sha256"] = (
+                    receipt_statements_canonical_sha256
+                )
+            if receipt_issuer_id:
+                audit_payload["receipt_issuer_id"] = receipt_issuer_id
             self._audit(
                 connection,
                 None,
                 "vex_document_imported",
                 actor,
-                {
-                    "import_id": import_id,
-                    "format": vex_format,
-                    "source_sha256": source_sha256,
-                    "entry_count": entry_count,
-                },
+                audit_payload,
             )
         return import_id
 

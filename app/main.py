@@ -45,6 +45,7 @@ from .matcher import (
 )
 from .spreadsheet_io import build_components, read_sbom, write_report
 from .vex import parse_vex_bytes, write_vex
+from .vex_intake import VexIntakeError, verify_vex_intake_receipt
 from .evidence_package import (
     build_evidence_package_payload,
     write_evidence_package_zip,
@@ -1139,14 +1140,42 @@ async def record_art14_submission(
 @app.post("/api/vex/import")
 async def import_vex(
     file: UploadFile = File(...),
+    receipt: UploadFile = File(...),
+    issuer_id: str = Form(...),
     actor: str = Form(default="local analyst"),
 ) -> dict[str, Any]:
+    """Import a VEX document bound to a trusted Workbench M8-1 intake receipt.
+
+    Trust anchor (simplified): EUVD re-derives vex_document_sha256 +
+    statements_canonical_sha256 (byte-exact to Workbench) and checks the issuer
+    is ADMITTED in the allowlist. Does NOT re-verify the cosign signature
+    (trusts Workbench already did). Bare VEX without receipt is rejected (HTTP
+    400) — eliminates the vendor-self-signed-VEX bypass anti-pattern.
+    """
     original_name = Path(file.filename or "vex.json").name
     if Path(original_name).suffix.casefold() != ".json":
         raise HTTPException(status_code=400, detail="VEX 仅支持 JSON 文件")
     content = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="VEX 文件不能超过 20 MB")
+    receipt_bytes = await receipt.read(MAX_UPLOAD_BYTES + 1)
+    if len(receipt_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="receipt 文件不能超过 20 MB")
+    try:
+        receipt_doc = json.loads(receipt_bytes.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise HTTPException(
+            status_code=400, detail=f"receipt.json 解析失败: {exc}"
+        ) from exc
+    try:
+        validated_statements = await asyncio.to_thread(
+            verify_vex_intake_receipt, content, receipt_doc, issuer_id
+        )
+    except VexIntakeError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"VEX receipt 信任锚验证失败: {exc}",
+        ) from exc
     try:
         parsed = await asyncio.to_thread(parse_vex_bytes, content)
         digest = hashlib.sha256(content).hexdigest()
@@ -1159,6 +1188,9 @@ async def import_vex(
             actor,
             len(parsed["entries"]),
             parsed["warnings"],
+            receipt_doc["vex_document_sha256"],
+            receipt_doc["statements_canonical_sha256"],
+            issuer_id,
         )
         cases = [
             await asyncio.to_thread(
@@ -1178,6 +1210,10 @@ async def import_vex(
         "source_sha256": digest,
         "warnings": parsed["warnings"],
         "cases": [_case_response(item) for item in cases],
+        "receipt_vex_document_sha256": receipt_doc["vex_document_sha256"],
+        "receipt_statements_canonical_sha256": receipt_doc["statements_canonical_sha256"],
+        "issuer_id": issuer_id,
+        "validated_statement_count": len(validated_statements),
     }
 
 

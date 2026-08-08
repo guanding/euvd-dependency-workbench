@@ -1,0 +1,12 @@
+{
+  "registry_type": "vex-issuer-registry",
+  "schema_version": "vex-issuer-allowlist-euvd-1.0",
+  "updated_at": "2026-08-08",
+  "issuers": [
+    {
+      "issuer_id": "example-psirt-placeholder",
+      "display_name": "Example PSIRT (placeholder, not admitted — register real issuers before use)",
+      "status": "NOT_ADMITTED"
+    }
+  ]
+}
