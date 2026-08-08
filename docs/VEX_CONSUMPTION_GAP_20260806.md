@@ -1,6 +1,8 @@
 # VEX 消费链路现状与对接缺口
 
-> 测试日期 2026-08-06｜配套：方案 A handoff 导入槽（35d3cab）+ 嵌入式盲区系列文档
+> 测试日期 2026-08-06（反模式修复 2026-08-08）｜配套：方案 A handoff 导入槽（35d3cab）+ 嵌入式盲区系列文档
+>
+> **✅ 反模式已修复（commit 780c2e8）**：`/api/vex/import` 现强制 Workbench M8-1 intake receipt——重算 `vex_document_sha256` + `statements_canonical_sha256`（字节级与 Workbench 一致，交叉验证）+ issuer allowlist（`ADMITTED_FOR_VEX_INTAKE`）。裸 VEX → HTTP 422；NOT_ADMITTED issuer → HTTP 400。简化版（不验 cosign，信任 Workbench 已验签，完整 cosign 留下一迭代）。下方「反模式风险」「对接缺口」描述的是**修复前**状态，保留作背景与缺口追踪（部分缺口如 purl 映射 / OpenVEX case / 真实 PSIRT 登记仍未做）。
 
 ## 摘要
 
