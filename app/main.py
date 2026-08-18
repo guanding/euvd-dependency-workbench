@@ -78,6 +78,9 @@ MAX_COMPONENTS = int(os.getenv("MAX_COMPONENTS", "2000"))
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 MAX_CYCLONEDX_UPLOAD_BYTES = 10 * 1024 * 1024
 ALLOWED_SUFFIXES = {".xlsx", ".xlsm", ".csv", ".tsv", ".json"}
+CANONICAL_UUID_PATTERN = (
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
 ALLOWED_HOSTS = [
     host.strip()
     for host in os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
@@ -129,7 +132,7 @@ async def add_security_headers(request: Request, call_next: Any) -> Any:
 
 
 class MatchRequest(BaseModel):
-    upload_id: str = Field(pattern=r"^[0-9a-f-]{36}$")
+    upload_id: str = Field(pattern=CANONICAL_UUID_PATTERN)
     mapping: dict[str, str]
     project_name: str = Field(default="", max_length=120)
     project_version: str = Field(default="", max_length=80)
@@ -158,7 +161,7 @@ class ManualCaseRequest(BaseModel):
 
 
 class CaseFromFindingRequest(BaseModel):
-    job_id: str = Field(pattern=r"^[0-9a-f-]{36}$")
+    job_id: str = Field(pattern=CANONICAL_UUID_PATTERN)
     finding_index: int = Field(ge=0)
     actor: str = Field(default="local analyst", max_length=120)
 
@@ -209,16 +212,37 @@ class SubmissionRequest(BaseModel):
     receipt: str = Field(min_length=1, max_length=500)
 
 
+def _canonical_uuid_text(identifier: str, label: str) -> str:
+    try:
+        canonical = str(uuid.UUID(identifier))
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"{label} 无效") from exc
+    if canonical != identifier:
+        raise HTTPException(status_code=400, detail=f"{label} 必须是规范的小写 UUID")
+    return canonical
+
+
+def _confined_uuid_path(root: Path, identifier: str, suffix: str, label: str) -> Path:
+    canonical = _canonical_uuid_text(identifier, label)
+    resolved_root = root.resolve()
+    candidate = (resolved_root / f"{canonical}{suffix}").resolve()
+    if candidate.parent != resolved_root:
+        raise HTTPException(status_code=400, detail=f"{label} 路径无效")
+    return candidate
+
+
 def _job_path(job_id: str) -> Path:
-    return JOB_DIR / f"{job_id}.json"
+    return _confined_uuid_path(JOB_DIR, job_id, ".json", "job_id")
 
 
 def _upload_record_path(upload_id: str) -> Path:
-    return UPLOAD_DIR / f"{upload_id}.upload-record.json"
+    return _confined_uuid_path(
+        UPLOAD_DIR, upload_id, ".upload-record.json", "upload_id"
+    )
 
 
 def _legacy_upload_record_path(upload_id: str) -> Path:
-    return UPLOAD_DIR / f"{upload_id}.json"
+    return _confined_uuid_path(UPLOAD_DIR, upload_id, ".json", "upload_id")
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -722,8 +746,12 @@ async def euvd_status() -> dict[str, Any]:
             "base_url": EUVD_BASE_URL,
             "checked_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         }
-    except httpx.HTTPError as exc:
-        return {"status": "unavailable", "base_url": EUVD_BASE_URL, "detail": str(exc)}
+    except httpx.HTTPError:
+        return {
+            "status": "unavailable",
+            "base_url": EUVD_BASE_URL,
+            "detail": "EUVD endpoint check failed",
+        }
 
 
 async def _refresh_and_record_feeds(force: bool) -> dict[str, Any]:
@@ -1220,8 +1248,16 @@ async def import_vex(
 
 
 def _safe_export_path(case_id: str, label: str, extension: str) -> Path:
-    safe_label = re.sub(r"[^a-zA-Z0-9_.-]+", "-", label).strip("-")
-    return OUTPUT_DIR / f"{case_id}_{safe_label}.{extension}"
+    canonical = _canonical_uuid_text(case_id, "case_id")
+    if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}", label):
+        raise HTTPException(status_code=400, detail="导出标签无效")
+    if not re.fullmatch(r"[a-z0-9]{1,10}", extension):
+        raise HTTPException(status_code=400, detail="导出格式无效")
+    output_root = OUTPUT_DIR.resolve()
+    candidate = (output_root / f"{canonical}_{label}.{extension}").resolve()
+    if candidate.parent != output_root:
+        raise HTTPException(status_code=400, detail="导出路径无效")
+    return candidate
 
 
 @app.get("/api/art14/cases/{case_id}/vex/{vex_format}")
