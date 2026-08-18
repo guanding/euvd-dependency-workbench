@@ -1,0 +1,75 @@
+name: euvd-sbom-matcher
+
+services:
+  matcher:
+    build:
+      context: .
+    # 版本号单一源 = app/version.py 的 APP_VERSION。tag 必须与之一致；
+    # 发布前用 `python scripts/check_version_consistency.py` 校验。
+    image: euvd-dependency-workbench:2.4.0-rc.1
+    restart: unless-stopped
+    init: true
+    environment:
+      EUVD_BASE_URL: https://euvdservices.enisa.europa.eu
+      EUVD_CACHE_HOURS: "${EUVD_CACHE_HOURS:-24}"
+      EUVD_CONCURRENCY: "${EUVD_CONCURRENCY:-4}"
+      EUVD_MAX_PAGES: "${EUVD_MAX_PAGES:-100}"
+      EUVD_NETWORK_FALLBACK: "${EUVD_NETWORK_FALLBACK:-false}"
+      EUVD_LOCAL_DB: /app/euvd/euvd-readonly.sqlite3
+      EUVD_LOCAL_DB_SHA256_FILE: /app/euvd/euvd-readonly.sqlite3.sha256
+      MAX_COMPONENTS: "${MAX_COMPONENTS:-2000}"
+      ALLOWED_HOSTS: "${ALLOWED_HOSTS:-127.0.0.1,localhost}"
+    ports:
+      - "127.0.0.1:${MATCHER_PORT:-8090}:8090"
+    volumes:
+      - "${MATCHER_DATA_PATH:-./data}:/app/data"
+      - "${MATCHER_OUTPUT_PATH:-./outputs}:/app/outputs"
+      - "${MATCHER_DATA_PATH:-./data}/euvd-readonly.sqlite3:/app/euvd/euvd-readonly.sqlite3:ro"
+      - "${MATCHER_DATA_PATH:-./data}/euvd-readonly.sqlite3.sha256:/app/euvd/euvd-readonly.sqlite3.sha256:ro"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 512m
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  sbom-generator:
+    profiles: ["sbom"]
+    image: anchore/syft:v1.50.0@sha256:1288ea4c8b38767b4e620c1e312c8cb26b6e887a99b4f07ab6cd19fc6f225026
+    user: "${SBOM_SCANNER_UID:-501}:${SBOM_SCANNER_GID:-20}"
+    working_dir: /tmp
+    environment:
+      HOME: /tmp
+      XDG_CACHE_HOME: /tmp/cache
+      SYFT_CHECK_FOR_APP_UPDATE: "false"
+      SYFT_FORMAT_PRETTY: "true"
+    network_mode: none
+    volumes:
+      - type: bind
+        source: "${SBOM_SCAN_INPUT_PATH:-.}"
+        target: /scan-input
+        read_only: true
+      - type: bind
+        source: "${SBOM_SCAN_OUTPUT_PATH:-./self-test}"
+        target: /scan-output
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 1g
+    cpus: 2.0
+    restart: "no"
+    command: ["version"]

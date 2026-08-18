@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>EUVD Dependency Workbench</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">EU</div>
+        <div>
+          <div class="brand-name">EUVD Dependency Workbench</div>
+          <div class="brand-subtitle">SBOM · EUVD · CRA Art.14 评估准备</div>
+        </div>
+      </div>
+      <div class="header-actions">
+        <a class="icon-text-button header-button" href="/api/template" aria-label="下载 SBOM 模板">
+          <i data-lucide="file-spreadsheet" aria-hidden="true"></i>
+          <span>模板</span>
+        </a>
+        <button id="headerImportButton" class="icon-text-button primary" type="button" aria-label="导入 SBOM">
+          <i data-lucide="upload" aria-hidden="true"></i>
+          <span>导入 SBOM</span>
+        </button>
+        <div class="source-pill" id="sourcePill" title="公开情报来源：ENISA EUVD 与 EU/CISA KEV">
+          <span id="sourceDot" class="status-dot pending"></span>
+          <span id="sourceText">EUVD 检测中</span>
+          <span id="sourceMeta" class="source-meta"></span>
+        </div>
+        <div id="alertBadges" class="alert-badges" role="status" aria-live="polite"></div>
+      </div>
+    </header>
+
+    <div class="app-shell">
+      <aside class="sidebar">
+        <nav class="main-nav" aria-label="主导航">
+          <button class="nav-item active" data-view="dashboardView" type="button">
+            <i data-lucide="layout-dashboard" aria-hidden="true"></i>
+            <span>看板</span>
+          </button>
+          <button class="nav-item" data-view="projectsView" type="button">
+            <i data-lucide="folder-kanban" aria-hidden="true"></i>
+            <span>项目</span>
+            <span id="projectNavCount" class="nav-count">0</span>
+          </button>
+          <button class="nav-item" data-view="componentsView" type="button">
+            <i data-lucide="boxes" aria-hidden="true"></i>
+            <span>组件</span>
+          </button>
+          <button class="nav-item" data-view="vulnerabilitiesView" type="button">
+            <i data-lucide="shield-alert" aria-hidden="true"></i>
+            <span>漏洞</span>
+          </button>
+          <button class="nav-item" data-view="euvdCatalogView" type="button">
+            <i data-lucide="book-open" aria-hidden="true"></i>
+            <span>EUVD 目录</span>
+          </button>
+          <button class="nav-item" data-view="art14View" type="button">
+            <i data-lucide="clipboard-check" aria-hidden="true"></i>
+            <span>Art.14 案件</span>
+            <span id="art14NavCount" class="nav-count">0</span>
+          </button>
+          <button class="nav-item" data-view="importView" type="button">
+            <i data-lucide="file-up" aria-hidden="true"></i>
+            <span>导入</span>
+          </button>
+        </nav>
+
+        <div class="source-panel">
+          <div class="panel-label">数据源</div>
+          <div class="source-line">
+            <span>ENISA EUVD / KEV</span>
+            <span class="tag tag-green">公开情报</span>
+          </div>
+          <div class="source-line muted"><span>NVD / OSV / GHSA</span><span>关闭</span></div>
+          <div class="source-line muted"><span>CRA SRP</span><span>非查询库</span></div>
+          <div class="source-line muted"><span>缓存</span><span>24 小时</span></div>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <section id="dashboardView" class="app-view">
+          <div class="page-heading">
+            <div>
+              <h1>风险看板</h1>
+              <p id="dashboardTimestamp">正在汇总项目数据</p>
+            </div>
+            <button class="icon-text-button primary view-import-button" type="button">
+              <i data-lucide="plus" aria-hidden="true"></i>
+              新建项目版本
+            </button>
+          </div>
+
+          <div id="dashboardMetrics" class="metrics metrics-six"></div>
+
+          <div class="dashboard-grid">
+            <section class="work-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>漏洞严重性</h2>
+                  <p>统计EUVD记录映射，不代表Art.14触发</p>
+                </div>
+                <i data-lucide="activity" aria-hidden="true"></i>
+              </div>
+              <div id="severityChart" class="bar-chart"></div>
+            </section>
+
+            <section class="work-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>匹配质量</h2>
+                  <p>身份、查询和分页覆盖</p>
+                </div>
+                <i data-lucide="scan-search" aria-hidden="true"></i>
+              </div>
+              <div id="qualityChart" class="quality-chart"></div>
+            </section>
+          </div>
+
+          <section class="table-section">
+            <div class="section-toolbar">
+              <div>
+                <h2>最近项目版本</h2>
+                <p>按最近扫描时间排序</p>
+              </div>
+              <button class="text-button" data-view-link="projectsView" type="button">
+                查看全部
+                <i data-lucide="arrow-right" aria-hidden="true"></i>
+              </button>
+            </div>
+            <div class="table-frame">
+              <table>
+                <thead>
+                  <tr>
+                    <th>项目</th>
+                    <th>客户</th>
+                    <th>组件</th>
+                    <th>EUVD记录</th>
+                    <th>需复核</th>
+                    <th>最高 CVSS</th>
+                    <th>扫描时间</th>
+                    <th aria-label="操作"></th>
+                  </tr>
+                </thead>
+                <tbody id="recentProjectsBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="projectsView" class="app-view hidden">
+          <div class="page-heading">
+            <div>
+              <h1>项目</h1>
+              <p>客户产品及 SBOM 版本</p>
+            </div>
+            <button class="icon-text-button primary view-import-button" type="button">
+              <i data-lucide="plus" aria-hidden="true"></i>
+              新建项目版本
+            </button>
+          </div>
+          <div class="list-toolbar">
+            <label class="search-box">
+              <i data-lucide="search" aria-hidden="true"></i>
+              <input id="projectSearch" type="search" placeholder="搜索项目、版本或客户" />
+            </label>
+            <div id="projectListMeta" class="muted"></div>
+          </div>
+          <div class="table-frame tall-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>项目</th>
+                  <th>版本</th>
+                  <th>客户</th>
+                  <th>状态</th>
+                  <th>组件</th>
+                  <th>EUVD记录</th>
+                  <th>需复核</th>
+                  <th>身份覆盖率</th>
+                  <th>扫描时间</th>
+                  <th aria-label="操作"></th>
+                </tr>
+              </thead>
+              <tbody id="projectsBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="componentsView" class="app-view hidden">
+          <div class="page-heading">
+            <div>
+              <h1>组件</h1>
+              <p>所有项目版本的组件清单</p>
+            </div>
+          </div>
+          <div class="list-toolbar">
+            <label class="search-box">
+              <i data-lucide="search" aria-hidden="true"></i>
+              <input id="componentSearch" type="search" placeholder="搜索组件、版本、厂商或项目" />
+            </label>
+            <div id="componentListMeta" class="muted"></div>
+          </div>
+          <div class="table-frame tall-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>组件</th>
+                  <th>版本</th>
+                  <th>厂商</th>
+                  <th>项目</th>
+                  <th>标识</th>
+                  <th>EUVD记录</th>
+                  <th>需复核</th>
+                  <th>查询状态</th>
+                  <th>结果</th>
+                </tr>
+              </thead>
+              <tbody id="componentsBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="vulnerabilitiesView" class="app-view hidden">
+          <div class="page-heading">
+            <div>
+              <h1>EUVD 漏洞</h1>
+              <p>公开EUVD/KEV情报；CRA Art.14结论必须人工审批</p>
+            </div>
+          </div>
+          <div class="list-toolbar toolbar-wrap">
+            <div class="segmented" role="group" aria-label="漏洞筛选">
+              <button class="segment active" data-catalog-filter="all" type="button" aria-pressed="true">全部</button>
+              <button class="segment" data-catalog-filter="已匹配" type="button" aria-pressed="false">EUVD记录</button>
+              <button class="segment" data-catalog-filter="需复核" type="button" aria-pressed="false">需复核</button>
+            </div>
+            <label class="search-box">
+              <i data-lucide="search" aria-hidden="true"></i>
+              <input id="vulnerabilitySearch" type="search" placeholder="搜索 CVE、EUVD ID、组件、项目或厂商" />
+            </label>
+            <div id="vulnerabilityListMeta" class="muted"></div>
+          </div>
+          <div class="table-frame tall-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>映射</th>
+                  <th>输入标识</th>
+                  <th>EUVD ID</th>
+                  <th>外部利用情报</th>
+                  <th>组件</th>
+                  <th>项目</th>
+                  <th>产品适用性</th>
+                  <th>CRA Art.14</th>
+                  <th aria-label="操作"></th>
+                </tr>
+              </thead>
+              <tbody id="vulnerabilitiesBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="euvdCatalogView" class="app-view hidden">
+          <div class="page-heading">
+            <div>
+              <h1>EUVD 目录</h1>
+              <p>本地只读快照全库浏览（<strong id="euvdCatalogFreshness" class="muted"></strong>）；搜索 EUVD ID 或 CVE；Art.14 结论必须人工审批。</p>
+            </div>
+          </div>
+          <div class="list-toolbar toolbar-wrap">
+            <label class="search-box">
+              <i data-lucide="search" aria-hidden="true"></i>
+              <input id="euvdCatalogSearch" type="search" placeholder="搜索 EUVD ID（如 EUVD-2024-）或 CVE（如 CVE-2024-）" />
+            </label>
+            <select id="euvdCatalogSort" class="icon-text-button" aria-label="排序">
+              <option value="euvd_id_desc">EUVD ID 降序（最新创建）</option>
+              <option value="euvd_id_asc">EUVD ID 升序</option>
+            </select>
+            <label class="euvd-catalog-filter">
+              <input id="euvdCatalogActivelyExploited" type="checkbox" />
+              <span>仅积极利用（CRA Art.3(42)）</span>
+            </label>
+            <div id="euvdCatalogMeta" class="muted"></div>
+          </div>
+          <div class="table-frame tall-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>EUVD ID</th>
+                  <th>CVE</th>
+                  <th>严重性</th>
+                  <th>评分</th>
+                  <th>产品 / 厂商</th>
+                  <th>积极利用</th>
+                  <th>发布日</th>
+                  <th>更新日</th>
+                </tr>
+              </thead>
+              <tbody id="euvdCatalogBody"></tbody>
+            </table>
+          </div>
+          <div class="list-toolbar toolbar-wrap">
+            <button id="euvdCatalogPrev" class="icon-text-button" type="button" disabled>
+              <i data-lucide="chevron-left" aria-hidden="true"></i>上一页
+            </button>
+            <span id="euvdCatalogPageInfo" class="muted"></span>
+            <button id="euvdCatalogNext" class="icon-text-button" type="button" disabled>
+              下一页<i data-lucide="chevron-right" aria-hidden="true"></i>
+            </button>
+          </div>
+        </section>
+
+        <section id="art14View" class="app-view hidden">
+          <div class="page-heading">
+            <div>
+              <h1>CRA Art.14 案件</h1>
+              <p>公开信号、产品适用性、积极利用证据和最终报告决定彼此分离</p>
+            </div>
+            <button id="refreshFeedsButton" class="icon-text-button" type="button" title="一键更新 EUVD：请求编排器执行 增量同步 + KEV/CVE 刷新 + 消费者快照重建。需 mirror_ops.py watch 守护进程运行（约束：Web 只发请求，不直接同步）">
+              <i data-lucide="refresh-cw" aria-hidden="true"></i>
+              一键更新 EUVD
+            </button>
+          </div>
+
+          <div class="compliance-notice">
+            <strong>人工决定边界</strong>
+            <span>KEV/EUVD 命中不会自动触发报告；未命中也不是“不需报告”。awareness 只能由授权人员基于初评和证据确认。</span>
+          </div>
+          <div id="feedSnapshotStatus" class="status-strip"></div>
+
+          <div class="case-tools-grid">
+            <section class="work-panel compact-panel">
+              <div class="panel-heading"><div><h2>建立零日/人工案件</h2><p>CVE/EUVD ID 可留空</p></div></div>
+              <div class="metadata-grid">
+                <label class="field"><span>产品名称 *</span><input id="manualProductName" type="text" /></label>
+                <label class="field"><span>产品版本</span><input id="manualProductVersion" type="text" /></label>
+                <label class="field"><span>组件</span><input id="manualComponentName" type="text" /></label>
+                <label class="field"><span>CVE</span><input id="manualCveId" type="text" placeholder="可选" /></label>
+                <label class="field"><span>EUVD ID</span><input id="manualEuvdId" type="text" placeholder="可选" /></label>
+                <label class="field field-wide"><span>漏洞/信号摘要</span><textarea id="manualSummary" rows="3"></textarea></label>
+              </div>
+              <button id="createManualCaseButton" class="icon-text-button primary" type="button">建立案件</button>
+            </section>
+
+            <section class="work-panel compact-panel">
+              <div class="panel-heading"><div><h2>实验性 VEX intake</h2><p>默认 fail-closed；仅接受与受信 Workbench receipt 绑定的 VEX</p></div></div>
+              <label class="field"><span>VEX 文件</span><input id="vexFileInput" type="file" accept=".json" /></label>
+              <label class="field"><span>Intake receipt</span><input id="vexReceiptInput" type="file" accept=".json" /></label>
+              <label class="field"><span>签发者 ID</span><input id="vexIssuerId" type="text" autocomplete="off" placeholder="须由运维加入 allowlist" /></label>
+              <label class="field"><span>记录人</span><input id="vexActor" type="text" value="local analyst" /></label>
+              <button id="importVexButton" class="icon-text-button primary" type="button">验证 receipt 并导入</button>
+              <div id="vexImportResult" class="muted">默认注册表没有已准入签发者；裸 VEX、未知签发者或哈希不一致均会被拒绝。本工具不在此端点重新执行 cosign 验签。</div>
+            </section>
+
+            <section class="work-panel compact-panel">
+              <div class="panel-heading"><div><h2>本地审批身份</h2><p>不同账户和 PIN；真实人员身份仍由制造商程序控制</p></div></div>
+              <label class="field"><span>姓名 *</span><input id="reviewerName" type="text" /></label>
+              <label class="field"><span>角色 *</span>
+                <select id="reviewerRole">
+                  <option value="technical">技术分析</option>
+                  <option value="compliance">合规复核</option>
+                  <option value="manufacturer_authorized">制造商授权</option>
+                </select>
+              </label>
+              <label class="field"><span>本地审批 PIN *</span><input id="reviewerPin" type="password" minlength="8" /></label>
+              <button id="createReviewerButton" class="icon-text-button" type="button">创建审批身份</button>
+              <div id="reviewerList" class="muted"></div>
+            </section>
+          </div>
+
+          <section class="table-section">
+            <div class="section-toolbar">
+              <div><h2>案件清单</h2><p id="art14ListMeta">正在读取</p></div>
+            </div>
+            <div class="table-frame">
+              <table>
+                <thead><tr>
+                  <th>产品 / 漏洞</th><th>公开信号</th><th>产品适用性</th>
+                  <th>Art.14 决定</th><th>流程</th><th>awareness</th><th>下一期限</th><th></th>
+                </tr></thead>
+                <tbody id="art14CasesBody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="art14CaseDetail" class="case-detail hidden">
+            <div class="section-toolbar">
+              <div><h2 id="caseDetailTitle">案件详情</h2><p id="caseDetailSubtitle"></p></div>
+              <button id="closeCaseDetailButton" class="icon-text-button" type="button">关闭详情</button>
+            </div>
+            <div id="caseDeadlineStrip" class="status-strip"></div>
+
+            <div class="case-form-grid">
+              <section class="work-panel compact-panel">
+                <h3>1. 产品适用性与风险</h3>
+                <label class="field"><span>适用性</span>
+                  <select id="caseApplicability">
+                    <option value="under_investigation">under_investigation</option>
+                    <option value="known_affected">known_affected</option>
+                    <option value="known_not_affected">known_not_affected</option>
+                    <option value="fixed">fixed</option>
+                  </select>
+                </label>
+                <label class="field"><span>适用性技术理由</span><textarea id="caseApplicabilityReason" rows="4"></textarea></label>
+                <label class="field"><span>积极利用证据状态</span>
+                  <select id="caseEvidenceStatus">
+                    <option value="not_assessed">not_assessed</option>
+                    <option value="reliable_evidence">reliable_evidence</option>
+                    <option value="insufficient">insufficient</option>
+                    <option value="no_evidence_found">no_evidence_found</option>
+                  </select>
+                </label>
+                <label class="field"><span>利用证据摘要</span><textarea id="caseEvidenceSummary" rows="3"></textarea></label>
+                <label class="field"><span>产品风险分析</span><textarea id="caseRiskSummary" rows="3"></textarea></label>
+                <label class="field"><span>缓解/修正措施</span><textarea id="caseMitigation" rows="3"></textarea></label>
+                <label class="field"><span>初步评估完成时间</span><input id="caseInitialAssessment" type="datetime-local" /></label>
+                <label class="field"><span>修正措施可用时间</span><input id="caseCorrectiveAt" type="datetime-local" /></label>
+                <label class="field"><span>下一复核时间</span><input id="caseNextReview" type="datetime-local" /></label>
+                <label class="field"><span>记录人</span><input id="caseUpdateActor" type="text" value="local analyst" /></label>
+                <button id="saveCaseAnalysisButton" class="icon-text-button primary" type="button">保存分析</button>
+              </section>
+
+              <section class="work-panel compact-panel">
+                <h3>2. 结构化积极利用证据</h3>
+                <label class="field"><span>来源类型</span><input id="evidenceSourceType" type="text" placeholder="CSIRT / telemetry / threat intelligence" /></label>
+                <label class="field"><span>来源编号或文件</span><input id="evidenceSourceRef" type="text" /></label>
+                <label class="field"><span>来源 URL</span><input id="evidenceSourceUrl" type="url" /></label>
+                <label class="field"><span>响应/文件 SHA-256</span><input id="evidenceSha256" type="text" maxlength="64" /></label>
+                <label class="field"><span>证据描述 *</span><textarea id="evidenceDescription" rows="3"></textarea></label>
+                <label class="field"><span>与具体产品的关系</span><textarea id="evidenceProductRelevance" rows="3"></textarea></label>
+                <label class="field"><span>可靠性结论</span>
+                  <select id="evidenceReliable">
+                    <option value="unknown">unknown</option><option value="yes">yes</option><option value="no">no</option>
+                  </select>
+                </label>
+                <div class="checkbox-grid">
+                  <label><input id="evidenceMaliciousActor" type="checkbox" /> 已确认恶意行为者</label>
+                  <label><input id="evidenceWithoutPermission" type="checkbox" /> 未经系统所有者许可</label>
+                  <label><input id="evidenceActualExploit" type="checkbox" /> 已确认实际利用</label>
+                </div>
+                <label class="field"><span>记录人</span><input id="evidenceActor" type="text" value="local analyst" /></label>
+                <button id="addEvidenceButton" class="icon-text-button primary" type="button">添加证据</button>
+                <div id="caseEvidenceList" class="evidence-list"></div>
+              </section>
+
+              <section class="work-panel compact-panel">
+                <h3>3. awareness 确认</h3>
+                <p class="muted">awareness 是达到合理确定程度的时间，不是审批时间；确认后立即计算最迟期限。</p>
+                <label class="field"><span>授权身份</span><select id="awarenessReviewer"></select></label>
+                <label class="field"><span>审批 PIN</span><input id="awarenessPin" type="password" /></label>
+                <label class="field"><span>awareness 时间</span><input id="awarenessAt" type="datetime-local" /></label>
+                <label class="field"><span>合理确定依据</span><textarea id="awarenessBasis" rows="4"></textarea></label>
+                <label class="field"><span>绑定证据</span><select id="awarenessEvidence" multiple size="4"></select></label>
+                <label class="confirm-box"><input id="awarenessConfirmation" type="checkbox" /> 我确认这是制造商 awareness 时间，未由扫描时间自动生成</label>
+                <button id="confirmAwarenessButton" class="icon-text-button primary" type="button">确认 awareness</button>
+              </section>
+
+              <section class="work-panel compact-panel">
+                <h3>4. 四眼 Art.14 决定</h3>
+                <label class="field"><span>阶段</span>
+                  <select id="reviewStage"><option value="technical">技术提议</option><option value="compliance">合规复核</option></select>
+                </label>
+                <label class="field"><span>审批身份</span><select id="reviewIdentity"></select></label>
+                <label class="field"><span>审批 PIN</span><input id="reviewPin" type="password" /></label>
+                <label class="field"><span>决定</span>
+                  <select id="reviewDecision">
+                    <option value="needs_more_information">needs_more_information</option>
+                    <option value="reportable">reportable</option>
+                    <option value="not_reportable">not_reportable</option>
+                  </select>
+                </label>
+                <label class="field"><span>理由 *</span><textarea id="reviewRationale" rows="5"></textarea></label>
+                <button id="recordReviewButton" class="icon-text-button primary" type="button">记录审批</button>
+                <div id="caseApprovals" class="evidence-list"></div>
+              </section>
+
+              <section class="work-panel compact-panel field-wide">
+                <h3>5. ENISA SRP Q16 草稿字段</h3>
+                <div id="srpFieldsGrid" class="metadata-grid"></div>
+                <button id="saveSrpFieldsButton" class="icon-text-button primary" type="button">保存 SRP 草稿字段</button>
+                <div id="srpReadinessPanel" class="status-strip"></div>
+                <div id="caseExports" class="export-links"></div>
+              </section>
+
+              <section class="work-panel compact-panel">
+                <h3>6. 手工提交回执</h3>
+                <p class="muted">本工具没有 SRP 提交 API，只记录已在 SRP 手工提交后的回执。</p>
+                <label class="field"><span>阶段</span>
+                  <select id="submissionStage"><option value="early-warning">24h early warning</option><option value="notification">72h notification</option><option value="final-report">Final report</option></select>
+                </label>
+                <label class="field"><span>制造商授权身份</span><select id="submissionReviewer"></select></label>
+                <label class="field"><span>审批 PIN</span><input id="submissionPin" type="password" /></label>
+                <label class="field"><span>提交时间</span><input id="submissionAt" type="datetime-local" /></label>
+                <label class="field"><span>SRP 回执/编号</span><input id="submissionReceipt" type="text" /></label>
+                <button id="recordSubmissionButton" class="icon-text-button primary" type="button">登记回执</button>
+                <div id="submissionList" class="evidence-list"></div>
+              </section>
+            </div>
+          </section>
+        </section>
+
+        <section id="importView" class="app-view hidden">
+          <div class="page-heading">
+            <div>
+              <h1>导入 SBOM</h1>
+              <p>创建新的项目版本扫描</p>
+            </div>
+            <a class="icon-text-button" href="/api/template">
+              <i data-lucide="download" aria-hidden="true"></i>
+              下载模板
+            </a>
+          </div>
+
+          <div id="projectMetadata" class="metadata-grid">
+            <label class="field">
+              <span>项目名称 *</span>
+              <input id="projectName" type="text" maxlength="120" placeholder="例如：智能网关" />
+            </label>
+            <label class="field">
+              <span>项目版本</span>
+              <input id="projectVersion" type="text" maxlength="80" placeholder="例如：2.4.0-rc.1" />
+            </label>
+            <label class="field">
+              <span>软件 Build / 固件构建</span>
+              <input id="softwareBuild" type="text" maxlength="160" placeholder="例如：GW-2.4.0-rc.1+build.1" />
+            </label>
+            <label class="field">
+              <span>客户</span>
+              <input id="customerName" type="text" maxlength="120" placeholder="客户或组织名称" />
+            </label>
+          </div>
+
+          <label id="dropZone" class="drop-zone" for="fileInput" role="button" tabindex="0">
+            <input id="fileInput" type="file" accept=".xlsx,.xlsm,.csv,.tsv,.json" hidden />
+            <span class="drop-icon"><i data-lucide="upload-cloud" aria-hidden="true"></i></span>
+            <strong>选择 SBOM 文件</strong>
+            <span>Excel、CSV、TSV 或 CycloneDX JSON，最大 20 MB</span>
+          </label>
+
+          <label id="receiptZone" class="drop-zone drop-zone-secondary" for="receiptInput" role="button" tabindex="0">
+            <input id="receiptInput" type="file" accept=".json" hidden />
+            <span class="drop-icon"><i data-lucide="file-key" aria-hidden="true"></i></span>
+            <strong>附加 SBOM Workbench receipt.json（可选）</strong>
+            <span>携带来源与边界声明：SELF_TEST 分类 · 单向契约 · provenance</span>
+          </label>
+
+          <div id="uploadState" class="inline-state hidden" role="status">
+            <span class="spinner" aria-hidden="true"></span>
+            <span id="uploadStateText">正在读取文件</span>
+          </div>
+
+          <div id="mappingArea" class="hidden">
+            <div class="section-toolbar">
+              <div>
+                <h2>字段映射</h2>
+                <p id="fileMeta"></p>
+              </div>
+              <button id="replaceFileButton" class="icon-text-button" type="button">
+                <i data-lucide="replace" aria-hidden="true"></i>
+                更换文件
+              </button>
+            </div>
+            <div id="mappingGrid" class="mapping-grid"></div>
+            <div class="section-toolbar preview-toolbar">
+              <div>
+                <h2>数据预览</h2>
+                <p id="previewMeta"></p>
+              </div>
+              <button id="startMatchButton" class="icon-text-button primary" type="button">
+                <i data-lucide="scan-search" aria-hidden="true"></i>
+                开始 EUVD / KEV 核验
+              </button>
+            </div>
+            <div class="table-frame preview-table">
+              <table id="previewTable"></table>
+            </div>
+          </div>
+        </section>
+
+        <section id="projectView" class="app-view hidden">
+          <button id="backToProjectsButton" class="back-button" type="button">
+            <i data-lucide="arrow-left" aria-hidden="true"></i>
+            返回项目
+          </button>
+          <div class="page-heading project-heading">
+            <div>
+              <h1 id="projectTitle">项目详情</h1>
+              <p id="projectSubtitle"></p>
+            </div>
+            <div class="header-actions">
+              <button id="rescanButton" class="icon-text-button" type="button">
+                <i data-lucide="refresh-cw" aria-hidden="true"></i>
+                新版本
+              </button>
+              <a id="downloadReportButton" class="icon-text-button primary hidden" href="#">
+                <i data-lucide="download" aria-hidden="true"></i>
+                下载报告
+              </a>
+              <a id="downloadEvidenceButton" class="icon-text-button hidden" href="#" title="导出 CRA 评估支持证据包（非符合性结论；manifest + evidence.json + evidence.xlsx + 审计链）">
+                <i data-lucide="package" aria-hidden="true"></i>
+                证据包
+              </a>
+            </div>
+          </div>
+
+          <div id="progressPanel" class="progress-panel hidden" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-labelledby="progressStage">
+            <div class="progress-header">
+              <strong id="progressStage">准备查询 EUVD</strong>
+              <span id="progressPercent">0%</span>
+            </div>
+            <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+            <div id="progressDetail" class="muted">正在建立任务</div>
+            <div id="progressAction" class="progress-action"></div>
+          </div>
+
+          <section id="sbomSourceDeclarations" class="quality-band hidden" aria-label="SBOM 来源与边界声明">
+            <div>
+              <strong>SBOM 来源声明</strong>
+              <span>工程内部候选 SBOM · 非制造商签发 · 非 CRA 符合证明</span>
+            </div>
+            <div id="declarationChips" class="declaration-chips"></div>
+          </section>
+
+          <div id="projectMetrics" class="metrics metrics-six"></div>
+
+          <section id="projectQualityPanel" class="quality-band hidden">
+            <div>
+              <strong>匹配质量</strong>
+              <span>当前项目版本</span>
+            </div>
+            <div id="projectQuality" class="quality-inline"></div>
+          </section>
+
+          <div class="detail-tabs" role="group" aria-label="项目详情筛选">
+            <button class="detail-tab active" data-detail-tab="vulnerabilities" type="button" aria-pressed="true">
+              漏洞
+            </button>
+            <button class="detail-tab" data-detail-tab="components" type="button" aria-pressed="false">
+              组件
+            </button>
+            <button class="detail-tab" data-detail-tab="errors" type="button" aria-pressed="false">
+              查询错误
+            </button>
+          </div>
+
+          <div class="list-toolbar">
+            <label class="search-box">
+              <i data-lucide="search" aria-hidden="true"></i>
+              <input id="projectDetailSearch" type="search" placeholder="搜索当前项目" />
+            </label>
+            <div id="projectDetailMeta" class="muted"></div>
+          </div>
+          <div class="table-frame tall-table">
+            <table id="projectDetailTable"></table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast hidden" role="alert"></div>
+    <script src="/app.js"></script>
+  </body>
+</html>

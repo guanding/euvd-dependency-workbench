@@ -1,0 +1,16 @@
+data/
+backups/
+outputs/
+exports/
+samples/
+runtime/
+runtime-install/
+self-test/
+.git/
+.serena/
+.artifact-work/
+.export-stage-*/
+tests/
+*.zip
+**/__pycache__/
+**/*.pyc

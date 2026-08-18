@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+
+jobs:
+  python-quality:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.13 matches the Windows runtime; 3.14 matches the Docker builder.
+        python-version: ["3.13", "3.14"]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock
+            requirements-dev.lock
+      - name: Install test dependencies
+        run: |
+          python -m pip install --require-hashes --requirement requirements.lock
+          python -m venv "${RUNNER_TEMP}/ci-tools"
+          "${RUNNER_TEMP}/ci-tools/bin/python" -m pip install \
+            --require-hashes --requirement requirements-dev.lock
+      - name: Check version consistency
+        run: python scripts/check_version_consistency.py --no-health
+      - name: Lint
+        run: >-
+          "${RUNNER_TEMP}/ci-tools/bin/ruff" check app tests scripts release
+      - name: Run unit tests without repository data
+        env:
+          DATA_DIR: ${{ runner.temp }}/euvd-test/data
+          OUTPUT_DIR: ${{ runner.temp }}/euvd-test/outputs
+          EUVD_LOCAL_DB: ${{ github.workspace }}/data/euvd-readonly.sqlite3
+          EUVD_LOCAL_DB_SHA256_FILE: ${{ github.workspace }}/data/euvd-readonly.sqlite3.sha256
+        run: |
+          mkdir -p "$DATA_DIR" "$OUTPUT_DIR"
+          python -m unittest discover -s tests
+      - name: Build and scan the explicit public-source candidate
+        run: python release/build_public_candidate.py --output "${{ runner.temp }}/public-candidate"
+      - name: Verify public-candidate Markdown links
+        run: python release/check_public_links.py "${{ runner.temp }}/public-candidate"
+
+  container-smoke:
+    name: Container build and smoke test
+    needs: python-quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build image
+        run: docker build --tag euvd-dependency-workbench:ci .
+      - name: Smoke-test the built image
+        run: |
+          docker run --detach --name euvd-ci --publish 127.0.0.1:18090:8090 euvd-dependency-workbench:ci
+          trap 'docker logs euvd-ci || true; docker rm --force euvd-ci >/dev/null 2>&1 || true' EXIT
+          ready=0
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:18090/api/health >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+          docker exec euvd-ci /usr/bin/python -c "import hashlib; from pathlib import Path; root = Path('/app/licenses'); assert hashlib.sha256((root / 'LICENSE').read_bytes()).hexdigest() == 'cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30'; assert 'Copyright 2026 Ding Guan' in (root / 'NOTICE').read_text(encoding='utf-8').splitlines(); assert (root / 'THIRD_PARTY_NOTICES.md').is_file()"

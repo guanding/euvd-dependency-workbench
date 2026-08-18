@@ -1,0 +1,39 @@
+# === 运行数据与客户证据（绝不入库）===
+# data/ 含客户 SBOM 上传、案件、审计、只读 EUVD 快照
+data/
+backups/
+outputs/
+self-test/
+runtime/
+samples/
+experiments/
+logs/
+exports/
+runtime-install/
+.export-stage-*/
+
+# === 数据库文件 ===
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+*.db
+*.db-journal
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.ci-tools/
+.pytest_cache/
+.mypy_cache/
+
+# === 系统 / 编辑器 ===
+.DS_Store
+.vscode/
+.idea/
+.serena/
+*.swp
+*.swo
+*~
