@@ -145,10 +145,9 @@ class JobLifecycleTests(unittest.TestCase):
         with ExitStack() as stack:
             for patcher in self._patches():
                 stack.enter_context(patcher)
-            expected = (self.output_dir / f"{UUID_A}_vex-cyclonedx.json").resolve()
-            self.assertEqual(
-                main._safe_export_path(UUID_A, "vex-cyclonedx", "json"), expected
-            )
+            generated = main._safe_export_path(UUID_A, "vex-cyclonedx", "json")
+            self.assertEqual(generated.parent, self.output_dir.resolve())
+            self.assertRegex(generated.name, r"^export-[0-9a-f]{32}\.json$")
             for case_id, label, extension in (
                 ("../../outside", "vex-cyclonedx", "json"),
                 (UUID_A, "../outside", "json"),

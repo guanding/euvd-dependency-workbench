@@ -1248,13 +1248,19 @@ async def import_vex(
 
 
 def _safe_export_path(case_id: str, label: str, extension: str) -> Path:
-    canonical = _canonical_uuid_text(case_id, "case_id")
+    _canonical_uuid_text(case_id, "case_id")
     if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}", label):
         raise HTTPException(status_code=400, detail="导出标签无效")
-    if not re.fullmatch(r"[a-z0-9]{1,10}", extension):
+    if extension == "json":
+        suffix = ".json"
+    elif extension == "xlsx":
+        suffix = ".xlsx"
+    elif extension == "html":
+        suffix = ".html"
+    else:
         raise HTTPException(status_code=400, detail="导出格式无效")
     output_root = OUTPUT_DIR.resolve()
-    candidate = (output_root / f"{canonical}_{label}.{extension}").resolve()
+    candidate = (output_root / f"export-{uuid.uuid4().hex}{suffix}").resolve()
     if candidate.parent != output_root:
         raise HTTPException(status_code=400, detail="导出路径无效")
     return candidate
@@ -1270,7 +1276,11 @@ async def export_case_vex(case_id: str, vex_format: str) -> FileResponse:
         await asyncio.to_thread(write_vex, path, case, vex_format)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=repair_text(exc)) from exc
-    return FileResponse(path, media_type="application/json", filename=path.name)
+    return FileResponse(
+        path,
+        media_type="application/json",
+        filename=f"{case_id}_vex-{vex_format}.json",
+    )
 
 
 @app.get("/api/art14/cases/{case_id}/srp/{stage}")
@@ -1302,7 +1312,11 @@ async def export_srp_draft(
         "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "html": "text/html",
     }[extension]
-    return FileResponse(path, media_type=media_type, filename=path.name)
+    return FileResponse(
+        path,
+        media_type=media_type,
+        filename=f"{case_id}_srp-{stage}.{extension}",
+    )
 
 
 @app.post("/api/uploads/preview")
