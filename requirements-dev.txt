@@ -1,6 +1,6 @@
 # Development/CI tool inputs (not shipped in the runtime image).
 # The complete graph is generated into requirements-dev.lock with hashes and
 # is installed into an isolated tools environment in CI.
-uv==0.11.15
+uv==0.12.5
 ruff==0.14.11
 pip-audit==2.9.0
