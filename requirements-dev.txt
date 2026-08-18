@@ -3,4 +3,4 @@
 # is installed into an isolated tools environment in CI.
 uv==0.11.15
 ruff==0.14.11
-pip-audit==2.9.0
+pip-audit==2.10.1
