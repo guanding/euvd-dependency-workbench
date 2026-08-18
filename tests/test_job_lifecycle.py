@@ -21,6 +21,7 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import httpx
 from fastapi import BackgroundTasks, HTTPException
 
 from app import main
@@ -117,6 +118,68 @@ class JobLifecycleTests(unittest.TestCase):
             _idempotent_job_id(UUID_A, mapping),
             _idempotent_job_id("00000000-0000-0000-0000-000000000002", mapping),
         )
+
+    def test_identifier_paths_are_uuid_validated_and_confined(self) -> None:
+        with ExitStack() as stack:
+            for patcher in self._patches():
+                stack.enter_context(patcher)
+            self.assertEqual(
+                main._job_path(UUID_A),
+                (self.job_dir / f"{UUID_A}.json").resolve(),
+            )
+            self.assertEqual(
+                main._upload_record_path(UUID_A),
+                (self.upload_dir / f"{UUID_A}.upload-record.json").resolve(),
+            )
+            for helper in (
+                main._job_path,
+                main._upload_record_path,
+                main._legacy_upload_record_path,
+            ):
+                with self.subTest(helper=helper.__name__):
+                    with self.assertRaises(HTTPException) as caught:
+                        helper("../../outside")
+                    self.assertEqual(caught.exception.status_code, 400)
+
+    def test_export_path_rejects_untrusted_path_segments(self) -> None:
+        with ExitStack() as stack:
+            for patcher in self._patches():
+                stack.enter_context(patcher)
+            generated = main._safe_export_path(UUID_A, "vex-cyclonedx", "json")
+            self.assertEqual(generated.parent, self.output_dir.resolve())
+            self.assertRegex(generated.name, r"^export-[0-9a-f]{32}\.json$")
+            for case_id, label, extension in (
+                ("../../outside", "vex-cyclonedx", "json"),
+                (UUID_A, "../outside", "json"),
+                (UUID_A, "vex-cyclonedx", "../json"),
+            ):
+                with self.subTest(case_id=case_id, label=label, extension=extension):
+                    with self.assertRaises(HTTPException) as caught:
+                        main._safe_export_path(case_id, label, extension)
+                    self.assertEqual(caught.exception.status_code, 400)
+
+    def test_euvd_status_does_not_expose_transport_exception_details(self) -> None:
+        transport_detail = "sensitive proxy detail credential=opaque-test-marker"
+
+        class FailingClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return False
+
+            async def get(self, *args, **kwargs):
+                raise httpx.HTTPError(transport_detail)
+
+        with (
+            patch.object(main.EuvdClient, "local_snapshot_status", return_value=None),
+            patch.object(main, "NETWORK_FALLBACK", True),
+            patch.object(main.httpx, "AsyncClient", return_value=FailingClient()),
+        ):
+            response = asyncio.run(main.euvd_status())
+
+        self.assertEqual(response["status"], "unavailable")
+        self.assertNotIn(transport_detail, json.dumps(response))
 
     def test_create_job_reuses_active_job(self) -> None:
         self._write_upload()
