@@ -1,80 +1,66 @@
 # Release process
 
-## Release state
+## Two independent lanes
 
-All project-authored material in the public-source candidate is declared by
-Ding Guan as independently authored, free of customer or third-party material,
-and licensed under Apache-2.0, Copyright 2026 Ding Guan. Public release remains
-blocked because third-party dependencies and distribution inputs are not
-approved, CodeQL is not yet enabled, and no reviewed container vulnerability
-scanner is configured. The portable exporter uses a tested explicit allowlist,
-but Windows receiving-machine execution and the final fixed candidate still
-require independent validation.
+### Lane A — public source repository
 
-No automated publishing workflow is provided while those conditions remain.
-A workflow artifact, local ZIP, container image, SBOM, signature, or green CI
-run is a candidate only.
+The Apache-2.0 project source may be made publicly visible from a fixed clean
+commit after the strict source-candidate gate and current CI pass. This lane
+publishes Git source only. It does not publish or approve a GitHub Release,
+container image, Windows portable bundle, customer data, customer deliverable,
+or conformity evidence.
 
-## Roles
+### Lane B — versioned artifacts
 
-Assign named people for each release:
+This lane is currently **BLOCKED / NOT OFFERED**. No workflow may push a
+container image, upload a portable bundle, create a GitHub Release, or publish
+a package. Artifact rights, vulnerabilities, provenance, signatures, platform
+tests, support terms, and exact hashes require a separate decision.
 
-- **Release owner:** fixes the commit and exact artifact set.
-- **Rights reviewer:** approves the project license, dependencies, templates,
-  data, images, and notices.
-- **Security/supply-chain reviewer:** independently reviews secret scans,
-  vulnerabilities, build provenance, SBOMs, and signatures.
+## Current roles and assurance
 
-The rights reviewer and security/supply-chain reviewer must not both be
-replaced by the release owner. CODEOWNERS routing alone is insufficient.
+Ding Guan (`@guanding`) is the sole maintainer, copyright holder, source
+rights declarant, security contact, and conduct moderator. There is no alternate
+or independent reviewer. Source publication is explicitly recorded as
+`SOLE_MAINTAINER_SELF_REVIEW`; CODEOWNERS and CI do not turn it into
+independent approval.
 
-## Procedure
+Independent review may be requested for a future artifact, but it is not a
+condition imposed on public source visibility and must never be fabricated.
 
-1. **Freeze scope.** Start from a clean protected branch, record the commit
-   SHA, version, supported Python versions, target platforms, and artifact
-   allowlist.
-2. **Close rights gates.** Verify the recorded Apache-2.0 grant and NOTICE are
-   present in the exact source and container release bytes. Verify the image
-   copies `LICENSE`, `NOTICE`, and `THIRD_PARTY_NOTICES.md` to `/app/licenses/`.
-   Approve `THIRD_PARTY_NOTICES.md`; remove every unapproved asset.
-3. **Sanitize.** Scan the current tree, full Git history, binaries, archives,
-   Office metadata, container layers, and generated outputs for secrets,
-   personal data, customer data, local paths, and internal-only material.
-4. **Verify in clean environments.** Run CI on the supported Python matrix,
-   build the container from the frozen commit, and smoke-test it without local
-   data. Rebuild any Windows portable artifact from an explicit allowlist on a
-   clean machine.
-5. **Run security gates.** Complete dependency audit, CodeQL, approved
-   full-history secret scanning, and a reviewed digest-pinned container
-   vulnerability scan. Document any time-bounded exception with owner and
-   expiry.
-6. **Create evidence.** Produce checksums, an exact-set manifest, SPDX or
-   CycloneDX SBOMs, provenance/attestations, and signatures for every released
-   artifact.
-7. **Independent review.** Both reviewers examine the fixed commit and final
-   artifact hashes. Rebuilding after review invalidates that approval.
-8. **Publish.** Create a signed annotated tag and GitHub Release only after all
-   items in `PUBLIC_RELEASE_CHECKLIST.md` are complete.
-9. **Post-release.** Verify downloads, hashes, signatures, documentation, and
-   vulnerability-reporting access from a separate account/machine. Record the
-   rollback or revocation path.
+## Source-publication procedure
 
-## Expected artifacts
+1. Freeze a clean commit and confirm the explicit public allowlist.
+2. Run the strict candidate builder; verify the exact-set manifest and source
+   visibility status.
+3. Scan the clean tree and its short public history for secrets, customer data,
+   local paths, private runtime state, and excluded binaries.
+4. Run the current CI/security workflows. They may build images for smoke tests
+   but must not publish them.
+5. Confirm README, LICENSE, NOTICE, THIRD_PARTY_NOTICES, SECURITY, SUPPORT, and
+   contribution terms agree with the source-only boundary.
+6. Change repository visibility to public, enable private vulnerability
+   reporting and CodeQL default setup, then verify the public clone and checks.
 
-At minimum, an approved release should contain a controlled source archive,
-container image by immutable digest, checksums, release notes, dependency
-notices, SBOMs, and provenance. A Windows portable artifact is optional and
-must not be published until its export implementation excludes `.git`,
-backups, runtime/work data, caches, and unapproved assets by construction.
+## Future artifact procedure
 
-GitHub-generated source snapshots must be evaluated separately from controlled
-release archives because their byte set and timestamps may differ.
+Before any tag, GitHub Release, container image, or portable bundle:
 
-## CodeQL activation
+1. freeze the exact commit, platform matrix, and artifact allowlist;
+2. review every direct/transitive dependency and container layer for
+   authoritative licenses, notices, compatibility, and source obligations;
+3. reproduce builds and run supported-platform, receiving-machine, and
+   vulnerability tests;
+4. generate exact manifests, hashes, SBOMs, provenance/attestations, and
+   signatures;
+5. record support, rollback, revocation, and disclosure terms;
+6. authorize only the named hashes, with the review model honestly labeled.
 
-`.github/codeql/codeql-config.yml` defines the intended analysis scope. No
-advanced CodeQL workflow was added because a trustworthy full commit SHA for
-`github/codeql-action` was not available in the offline authoring environment.
-Before release, either enable GitHub CodeQL default setup and record a
-successful analysis, or add an advanced workflow using a maintainer-verified
-full action SHA. A mutable reference such as `@v3` is not acceptable.
+Rebuilding after authorization invalidates the artifact decision.
+GitHub-generated source snapshots are not controlled artifact releases.
+
+## CodeQL
+
+The repository contains the intended CodeQL scope configuration. Enable GitHub
+CodeQL default setup immediately after the repository becomes public, or later
+add an advanced workflow pinned to a maintainer-verified full action SHA.

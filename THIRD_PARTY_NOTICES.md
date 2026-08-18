@@ -1,10 +1,12 @@
-# Third-party material register — draft
+# Third-party material register
 
-**Third-party release status: NOT APPROVED FOR PUBLIC DISTRIBUTION.**
+**Source repository status: APPROVED WITH EXCLUSIONS. Artifact distribution
+status: BLOCKED / NOT OFFERED.**
 
-This file is a release-preparation register. It is not a license grant, legal
-opinion, compatibility decision, or authorization to redistribute any item.
-Every entry requires named rights review against the exact release bytes.
+This register distinguishes public Git source from separately distributed
+dependencies, container layers, packages, and portable bundles. It is not a
+license grant, legal opinion, compatibility decision, or authorization to
+redistribute an external item.
 
 ## Project-owned material
 
@@ -16,10 +18,10 @@ no customer or third-party material. They are licensed under the Apache License
 dependencies, container layers, third-party specifications, facts, names,
 trademarks, tools, or other separately governed inputs listed below.
 
-Source archives retain those files at their root. The project container image
-retains `LICENSE`, `NOTICE`, and this register under `/app/licenses/`. Their
-presence records the project grant and the unresolved third-party boundary; it
-does not approve or relicense any dependency or base-image component.
+The public Git source retains those files at its root. If a container image is
+ever distributed, it must retain `LICENSE`, `NOTICE`, and this register under
+`/app/licenses/`. Their presence records the project grant and does not
+approve or relicense any dependency or base-image component.
 
 ## Declared Python dependencies
 
@@ -59,8 +61,8 @@ Python packages and 25 Wolfi APK packages. The package metadata includes
 GPL-3.0-or-later, LGPL-2.1-or-later, MPL-2.0, PSF-2.0, Apache-2.0, MIT, BSD and
 compound expressions. This observation is not a compatibility decision. The
 final per-architecture image digest, complete SBOM, license texts, modification
-status, and any corresponding-source or notice mechanism still require named
-review before distribution.
+status, and any corresponding-source or notice mechanism still require a
+recorded review before distribution.
 
 The `uv`, `ruff`, and `pip-audit` CI tool graph is separately fixed with hashes
 in `requirements-dev.lock` and installed outside the runtime environment. That
@@ -92,4 +94,4 @@ Before changing this status, attach to the fixed release commit:
 2. authoritative license texts and required notices;
 3. a compatibility/obligations review;
 4. a source and rights decision for each template and asset;
-5. the name, date, and scope of the approving rights reviewer.
+5. the maintainer, date, scope, review model, and exact approved hashes.

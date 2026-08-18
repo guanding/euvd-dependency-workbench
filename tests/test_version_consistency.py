@@ -67,11 +67,29 @@ class VersionConsistencyTests(unittest.TestCase):
         declaration = review["project_content_declaration"]
         self.assertEqual(declaration["declarant"], "Ding Guan")
         self.assertEqual(declaration["status"], "AUTHOR_DECLARED")
+        self.assertEqual(review["overall_status"], "APPROVED_WITH_EXCLUSIONS")
+        self.assertEqual(
+            review["review_model"]["mode"],
+            "SOLE_MAINTAINER_SELF_REVIEW",
+        )
+        self.assertFalse(review["review_model"]["independent_review_available"])
         for item_id in ("product-alias-registry", "public-cve-test-fixture"):
             item = next(item for item in review["items"] if item["id"] == item_id)
             self.assertEqual(item["status"], "APPROVED")
             self.assertEqual(item["license_expression"], "Apache-2.0")
             self.assertEqual(item["copyright_holder"], "Ding Guan")
+        dependencies = next(
+            item
+            for item in review["items"]
+            if item["id"] == "python-and-container-dependencies"
+        )
+        self.assertFalse(dependencies["included"])
+        self.assertTrue(dependencies["referenced"])
+        self.assertEqual(dependencies["status"], "REFERENCED_NOT_DISTRIBUTED")
+        self.assertEqual(
+            review["artifact_distribution"]["container_image"],
+            "BLOCKED_NOT_OFFERED",
+        )
         with tempfile.TemporaryDirectory() as directory_name:
             candidate = Path(directory_name)
             shutil.copy2(root / "LICENSE", candidate / "LICENSE")
