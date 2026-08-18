@@ -2,26 +2,23 @@
 
 ## Current status
 
-There is no supported public version. Current commits, Docker images, Windows
-portable packages, test reports, and SBOMs are engineering candidates only.
+This repository is an unreleased public-source preview. Ding Guan maintains it
+on a best-effort basis with no response-time, maintenance-duration, or
+end-of-life commitment. No GitHub Release, container image, Windows portable
+bundle, or supported public version is offered.
 
-After an approved public release:
+Use GitHub issues for reproducible bugs or questions involving synthetic or
+public data. Use the private process in `SECURITY.md` for suspected
+vulnerabilities.
 
-- use GitHub issues for reproducible bugs involving synthetic or public data;
-- use discussions or the documented support channel for usage questions, if
-  the repository owner enables one;
-- use the private process in `SECURITY.md` for suspected vulnerabilities.
-
-Do not submit customer SBOMs, databases, reports, logs, credentials, or
-embargoed vulnerability information to a public channel.
+Do not submit customer SBOMs, EUVD working databases, reports, logs,
+credentials, production data, or embargoed vulnerability information to a
+public channel.
 
 ## Support boundary
 
 Support does not include certification advice, a CRA conformity decision,
-customer evidence approval, guarantees about EUVD completeness, or legal
-advice. A successful match or generated package still requires qualified human
-review in its intended context.
-
-Supported versions, maintenance duration, response targets, and end-of-life
-rules must be added here before the first public release.
+customer evidence approval, legal advice, production hosting, or an SLA.
+Local-only operation, health checks, generated reports, green CI, or a source
+candidate do not authorize customer delivery or artifact distribution.
 

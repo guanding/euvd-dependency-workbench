@@ -4,6 +4,14 @@
 `APP_VERSION`；Docker 镜像 tag 与 `/api/health` 必须一致，可用
 `python scripts/check_version_consistency.py --no-health` 校验。
 
+## 发布状态
+
+本仓库是 Apache-2.0 的**公开源码预览（unreleased RC）**：
+<https://github.com/guanding/euvd-dependency-workbench>。当前不提供 GitHub
+Release、官方容器镜像或 Windows portable 下载，也不承诺支持 SLA。依赖名称、
+版本、哈希与镜像 digest 是构建声明，不表示仓库捆绑或再授权相应第三方制品。
+源码公开不构成客户交付、CRA 符合性、认证或法律意见。
+
 这是一个本地、轻量、可迁移的客户 SBOM 漏洞管理工作台。信息架构参考
 Dependency-Track 的项目化工作方式，但只查询 ENISA European Vulnerability
 Database (EUVD) 的 CVE 映射、漏洞详情和 EU/CISA KEV 公开数据，不会下载
@@ -86,9 +94,9 @@ http://localhost:8090
 stop.cmd
 ```
 
-公开 portable ZIP 不包含 Python runtime、客户数据或 EUVD 数据库。运行时由
-`setup-runtime.ps1` 在接收机器上单独安装；Windows portable 在完成独立实机
-验证前仍属于 RC，不得表述为客户交付放行。
+仓库目前不提供 portable ZIP。未来候选不得包含 Python runtime、客户数据或
+EUVD 数据库；运行时由 `setup-runtime.ps1` 在接收机器上单独安装。Windows
+portable 在完成实机验证和独立制品放行前不得分发或表述为客户交付放行。
 
 ## 客户表格字段
 

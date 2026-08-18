@@ -4,7 +4,8 @@
 This file is intentionally dependency-free and fail-closed. It never copies a
 working directory wholesale, includes only allowlisted tracked/non-ignored
 files, blocks common private runtime formats, and writes an exact SHA-256
-manifest. ``--strict`` additionally enforces the license and rights gates.
+manifest. ``--strict`` additionally enforces the public-source license,
+rights, and clean-worktree gates. It does not approve binary artifacts.
 """
 
 from __future__ import annotations
@@ -237,20 +238,36 @@ def build(output: Path, strict: bool) -> int:
 
     license_present = (output / "LICENSE").is_file()
     license_consistent, license_blocking_reason = _license_gate(output)
-    rights_pending = _rights_pending(output)
+    source_rights_pending = _rights_pending(output)
     source_worktree_dirty = bool(_git("status", "--porcelain"))
-    release_eligible = license_consistent and not rights_pending and not source_worktree_dirty
-    blocking_reasons = []
+    source_eligible = (
+        license_consistent and not source_rights_pending and not source_worktree_dirty
+    )
+    source_blocking_reasons = []
     if license_blocking_reason is not None:
-        blocking_reasons.append(license_blocking_reason)
-    if rights_pending:
-        blocking_reasons.append("THIRD_PARTY_RIGHTS_PENDING")
+        source_blocking_reasons.append(license_blocking_reason)
+    if source_rights_pending:
+        source_blocking_reasons.append("SOURCE_RIGHTS_PENDING")
     if source_worktree_dirty:
-        blocking_reasons.append("SOURCE_WORKTREE_DIRTY")
+        source_blocking_reasons.append("SOURCE_WORKTREE_DIRTY")
     status = {
-        "candidate_status": "RELEASE_ELIGIBLE_CANDIDATE" if release_eligible else "BLOCKED_RELEASE_GATES",
-        "release_eligible": release_eligible,
-        "blocking_reasons": blocking_reasons,
+        "candidate_status": (
+            "SOURCE_REPOSITORY_PUBLICATION_ELIGIBLE"
+            if source_eligible
+            else "SOURCE_REPOSITORY_PUBLICATION_BLOCKED"
+        ),
+        "source_repository_publication_eligible": source_eligible,
+        "source_repository_publication_blocking_reasons": source_blocking_reasons,
+        "github_release_eligible": False,
+        "python_artifact_distribution_eligible": False,
+        "container_distribution_eligible": False,
+        "windows_portable_distribution_eligible": False,
+        "artifact_distribution_blocking_reasons": [
+            "ARTIFACT_LICENSE_AND_NOTICE_REVIEW_PENDING",
+            "CONTAINER_VULNERABILITY_REVIEW_PENDING",
+            "SIGNED_PROVENANCE_PENDING",
+            "SUPPORTED_PLATFORM_RELEASE_VALIDATION_PENDING",
+        ],
         "source_head": _git("rev-parse", "HEAD"),
         "source_worktree_dirty": source_worktree_dirty,
         "file_count_before_generated_metadata": len(selected),
@@ -258,8 +275,12 @@ def build(output: Path, strict: bool) -> int:
         "license_consistent": license_consistent,
         "license_expression": "Apache-2.0" if license_consistent else None,
         "copyright_notice": EXPECTED_COPYRIGHT_NOTICE if license_consistent else None,
-        "third_party_rights_pending": rights_pending,
-        "boundary": "NOT_CUSTOMER_EVIDENCE_NOT_CONFORMITY_NOT_RELEASE_APPROVAL",
+        "source_rights_pending": source_rights_pending,
+        "review_model": "SOLE_MAINTAINER_SELF_REVIEW",
+        "boundary": (
+            "SOURCE_ONLY_NO_GITHUB_RELEASE_NO_BINARY_OR_CONTAINER_DISTRIBUTION_"
+            "NOT_CUSTOMER_EVIDENCE_NOT_CONFORMITY"
+        ),
     }
     status_path = output / "PUBLIC_RELEASE_STATUS.json"
     status_path.write_text(
@@ -277,7 +298,7 @@ def build(output: Path, strict: bool) -> int:
     )
 
     print(json.dumps(status, ensure_ascii=False, indent=2))
-    if strict and not release_eligible:
+    if strict and not source_eligible:
         return 2
     return 0
 
@@ -288,7 +309,7 @@ def main() -> int:
     parser.add_argument(
         "--strict",
         action="store_true",
-        help="return non-zero until license and third-party rights gates are closed",
+        help="return non-zero until public-source license, rights, and clean-tree gates are closed",
     )
     args = parser.parse_args()
     try:
