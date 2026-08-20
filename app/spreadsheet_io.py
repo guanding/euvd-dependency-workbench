@@ -258,6 +258,43 @@ HANDOFF_CLASSIFICATION = "SELF_TEST_NOT_CUSTOMER_EVIDENCE"
 HANDOFF_AUTHORITY_BOUNDARY = "NO_SBOM_FACT_RELEASE_CONFORMITY_OR_REPORTING_AUTHORITY"
 HANDOFF_KEV_BOUNDARY = "KEV_PRESENCE_IS_PRIORITIZATION_ONLY_ABSENCE_IS_NOT_NON_EXPLOITATION_PROOF"
 HANDOFF_DIRECTION = "SBOM_TO_EUVD_ONLY"
+HANDOFF_SCHEMA_VERSION = "1.1"
+HANDOFF_MONITORING_PURPOSE = "PERIODIC_COMPONENT_RESCAN_CANDIDATE_ONLY"
+HANDOFF_VERSION_APPLICABILITY_BOUNDARY = "MANUAL_REVIEW_REQUIRED"
+HANDOFF_ENDPOINT = "http://127.0.0.1:8090"
+HANDOFF_SOURCE_BINDINGS = {
+    "CALLER_DECLARED_NOT_INDEPENDENTLY_VERIFIED",
+    "DERIVED_FROM_VERIFIED_M3A_ROOT",
+}
+HANDOFF_SELFTEST_PROFILES = {
+    "m3a-source-directory",
+    "m3a-oci-archive",
+    "m3a-portable-runtime",
+}
+HANDOFF_RECEIPT_KEYS = {
+    "schema_version",
+    "classification",
+    "handoff_id",
+    "source_run_id",
+    "source_binding_status",
+    "source_profile_id",
+    "source_root_completion_sha256",
+    "source_relative_name",
+    "cyclonedx_spec_version",
+    "cyclonedx_sha256",
+    "component_record_count",
+    "purl_coverage",
+    "version_coverage",
+    "target_endpoint",
+    "direction",
+    "reverse_fact_write",
+    "automatic_art14_decision",
+    "automatic_vulnerability_confirmation",
+    "monitoring_purpose",
+    "version_applicability_boundary",
+    "kev_boundary",
+    "authority_boundary",
+}
 # Receipt fields carried forward as audit-only evidence. None is a product
 # identity field, so `fields` stays empty and the prefill chain is unaffected.
 # source_run_id is the workbench's internal run id, not a customer identifier.
@@ -267,6 +304,10 @@ HANDOFF_EVIDENCE_KEYS = (
     "kev_boundary",
     "direction",
     "reverse_fact_write",
+    "automatic_art14_decision",
+    "automatic_vulnerability_confirmation",
+    "monitoring_purpose",
+    "version_applicability_boundary",
     "source_binding_status",
     "source_profile_id",
     "cyclonedx_sha256",
@@ -299,10 +340,29 @@ def _extract_handoff_binding(cyclonedx_path: Path) -> dict[str, Any] | None:
         raise ValueError(f"receipt.json 解析失败: {exc}") from exc
     if not isinstance(receipt, dict):
         raise ValueError("receipt.json 必须是 JSON 对象")
+    if set(receipt) != HANDOFF_RECEIPT_KEYS:
+        raise ValueError("receipt 字段集与受支持的 1.1 合同不一致")
+    if receipt.get("schema_version") != HANDOFF_SCHEMA_VERSION:
+        raise ValueError("receipt schema_version 必须为 1.1")
+    if receipt.get("target_endpoint") != HANDOFF_ENDPOINT:
+        raise ValueError("receipt target_endpoint 必须为本机 EUVD 端点")
     if receipt.get("direction") != HANDOFF_DIRECTION:
         raise ValueError("receipt direction 必须为 SBOM_TO_EUVD_ONLY")
     if receipt.get("reverse_fact_write") is not False:
         raise ValueError("receipt reverse_fact_write 必须为 false")
+    if receipt.get("automatic_art14_decision") is not False:
+        raise ValueError("receipt automatic_art14_decision 必须为 false")
+    if receipt.get("automatic_vulnerability_confirmation") is not False:
+        raise ValueError(
+            "receipt automatic_vulnerability_confirmation 必须为 false"
+        )
+    if receipt.get("monitoring_purpose") != HANDOFF_MONITORING_PURPOSE:
+        raise ValueError("receipt monitoring_purpose 与周期重扫边界不符")
+    if (
+        receipt.get("version_applicability_boundary")
+        != HANDOFF_VERSION_APPLICABILITY_BOUNDARY
+    ):
+        raise ValueError("receipt version_applicability_boundary 必须要求人工复核")
     if receipt.get("classification") != HANDOFF_CLASSIFICATION:
         raise ValueError("receipt classification 不符合 SELF_TEST 边界")
     if receipt.get("authority_boundary") != HANDOFF_AUTHORITY_BOUNDARY:
@@ -315,7 +375,63 @@ def _extract_handoff_binding(cyclonedx_path: Path) -> dict[str, Any] | None:
         raise ValueError(f"无法读取 cyclonedx 计算 sha256: {exc}") from exc
     if receipt.get("cyclonedx_sha256") != actual_sha256:
         raise ValueError("receipt cyclonedx_sha256 与上传的 cyclonedx 不匹配")
+    try:
+        cyclonedx = json.loads(cyclonedx_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"无法复核 receipt 绑定的 CycloneDX: {exc}") from exc
+    if (
+        not isinstance(cyclonedx, dict)
+        or receipt.get("cyclonedx_spec_version") != cyclonedx.get("specVersion")
+    ):
+        raise ValueError("receipt cyclonedx_spec_version 与上传文档不匹配")
+    binding_status = receipt.get("source_binding_status")
+    if binding_status not in HANDOFF_SOURCE_BINDINGS:
+        raise ValueError("receipt source_binding_status 无效")
+    profile_id = receipt.get("source_profile_id")
+    root_sha256 = receipt.get("source_root_completion_sha256")
+    if binding_status == "CALLER_DECLARED_NOT_INDEPENDENTLY_VERIFIED":
+        if profile_id is not None or root_sha256 is not None:
+            raise ValueError("declared receipt 不得携带 verified-root 字段")
+    elif (
+        profile_id not in HANDOFF_SELFTEST_PROFILES
+        or not isinstance(root_sha256, str)
+        or re.fullmatch(r"[0-9a-f]{64}", root_sha256) is None
+    ):
+        raise ValueError("verified receipt 的 source root 字段无效")
+    source_run_id = receipt.get("source_run_id")
+    source_relative_name = receipt.get("source_relative_name")
+    if (
+        not isinstance(source_run_id, str)
+        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:@+_-]{0,255}", source_run_id)
+        is None
+        or not isinstance(source_relative_name, str)
+        or not source_relative_name
+        or Path(source_relative_name).name != source_relative_name
+    ):
+        raise ValueError("receipt 源标识字段无效")
+    identity = {
+        "source_run_id": source_run_id,
+        "source_binding_status": binding_status,
+        "source_profile_id": profile_id,
+        "source_root_completion_sha256": root_sha256,
+        "cyclonedx_sha256": actual_sha256,
+        "endpoint": HANDOFF_ENDPOINT,
+        "direction": HANDOFF_DIRECTION,
+        "contract_version": HANDOFF_SCHEMA_VERSION,
+    }
+    expected_handoff_id = "euvd-" + hashlib.sha256(
+        json.dumps(
+            identity,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    if receipt.get("handoff_id") != expected_handoff_id:
+        raise ValueError("receipt handoff_id 无法从固定输入重新派生")
     evidence = {key: receipt[key] for key in HANDOFF_EVIDENCE_KEYS if key in receipt}
+    evidence["source_reverification_status"] = "NOT_REVERIFIED_BY_EUVD_INTAKE"
     return {
         "fields": {},
         "evidence": evidence,
@@ -880,6 +996,11 @@ def write_report(
     summary_sheet["B11"] = _safe_cell(
         provenance.get("source_db_sha256") or "不适用"
     )
+    monitoring_contract = results.get("monitoring_contract") or {}
+    summary_sheet["A12"] = "周期重扫边界"
+    summary_sheet["B12"] = _safe_cell(
+        monitoring_contract.get("purpose") or "未启用候选限定模式"
+    )
 
     metrics = [
         ("组件总数", results["summary"]["component_count"], CYAN_FILL),
@@ -944,6 +1065,10 @@ def write_report(
         "euvd_source_db_sha256",
         "euvd_snapshot_created_at",
         "cra_review_required",
+        "monitoring_candidate_only",
+        "automatic_vulnerability_confirmation",
+        "automatic_art14_decision",
+        "version_applicability_boundary",
         "match_status",
         "confidence",
         "input_cve_ids",
@@ -1013,6 +1138,7 @@ def write_report(
         "query_pages",
         "query_truncated",
         "query_mode",
+        "monitoring_candidate_only",
         "unmapped_identifiers",
         "mapping_checked_at",
         "mapping_snapshot_sha256",
@@ -1067,6 +1193,7 @@ def write_report(
         ("未列入KEV", "只表示当前成功获取的KEV快照未列出，不代表漏洞未被利用。"),
         ("EPSS", "利用概率预测，不是已经发生恶意利用的证据。"),
         ("CRA Art.14", "自动化结果只能进入人工判定。依据CRA Art.3(42)与Art.14，需可靠证据、客户产品包含性及制造商awareness。"),
+        ("周期重扫", "带 Workbench handoff 1.1 receipt 的组件重扫只产生候选；即使产品/厂商/版本规则匹配，也强制进入人工复核，不自动确认漏洞或 Art.14 结论。"),
         ("SRP", "CRA Art.16 Single Reporting Platform是报告入口，不是公开查询数据库；本报告不代表已提交或已触发24h/72h时钟。"),
         ("需复核", "产品名匹配，但厂商缺失/差异较大，或 EUVD 版本表达式无法可靠机器解析。"),
         ("未发现匹配", "本次 EUVD 查询没有返回记录或候选；不是无漏洞声明，也不能排除SRP中存在非公开报告。"),

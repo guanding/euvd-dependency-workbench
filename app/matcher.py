@@ -1611,6 +1611,8 @@ def apply_exploitation_evidence(
 async def match_components(
     components: list[Component],
     progress: Callable[[int, int, str], Awaitable[None]] | None = None,
+    *,
+    monitoring_candidate_only: bool = False,
 ) -> dict[str, Any]:
     client_wrapper = EuvdClient()
     local_status = await asyncio.to_thread(client_wrapper.local_snapshot_status)
@@ -1782,6 +1784,24 @@ async def match_components(
                                     evidence_meta,
                                 )
                             )
+                if monitoring_candidate_only:
+                    for candidate in matches:
+                        candidate["original_match_status"] = candidate.get(
+                            "match_status", ""
+                        )
+                        candidate["original_component_applicability"] = candidate.get(
+                            "component_applicability", ""
+                        )
+                        candidate["match_status"] = "需复核"
+                        candidate["component_applicability"] = (
+                            "待人工核验（周期重扫候选）"
+                        )
+                        candidate["monitoring_candidate_only"] = True
+                        candidate["automatic_vulnerability_confirmation"] = False
+                        candidate["automatic_art14_decision"] = False
+                        candidate["version_applicability_boundary"] = (
+                            "MANUAL_REVIEW_REQUIRED"
+                        )
                 matches.sort(
                     key=lambda row: (
                         not row.get("cra_review_required"),
@@ -1853,6 +1873,7 @@ async def match_components(
                 "query_pages": query_meta.get("pages_fetched", 0),
                 "query_truncated": bool(query_meta.get("truncated")),
                 "query_mode": query_meta.get("query_mode", ""),
+                "monitoring_candidate_only": monitoring_candidate_only,
                 "unmapped_identifiers": ", ".join(query_meta.get("unmapped_identifiers") or []),
                 "mapping_checked_at": query_meta.get("mapping_checked_at", ""),
                 "mapping_snapshot_sha256": query_meta.get("mapping_snapshot_sha256", ""),
@@ -1886,7 +1907,7 @@ async def match_components(
         for row in component_rows
         if row["query_status"] == "成功" and not row["query_truncated"]
     )
-    return {
+    result = {
         "data_provenance": data_provenance,
         "components": component_rows,
         "matches": all_matches,
@@ -1953,3 +1974,13 @@ async def match_components(
             ),
         },
     }
+    if monitoring_candidate_only:
+        result["monitoring_contract"] = {
+            "purpose": "PERIODIC_COMPONENT_RESCAN_CANDIDATE_ONLY",
+            "component_rescan_candidate_only": True,
+            "automatic_vulnerability_confirmation": False,
+            "automatic_art14_decision": False,
+            "version_applicability_boundary": "MANUAL_REVIEW_REQUIRED",
+            "snapshot_absence_is_not_no_vulnerability_proof": True,
+        }
+    return result

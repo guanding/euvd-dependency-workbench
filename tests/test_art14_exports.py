@@ -30,6 +30,7 @@ class SrpXlsxSecurityTests(unittest.TestCase):
             write_srp_xlsx(target, case, "early-warning")
             workbook = load_workbook(target, data_only=False)
             sheet = workbook["SRP草稿"]
+            self.assertIn("Q16门户核对", workbook.sheetnames)
 
             values = [cell.value for cell in sheet["B"] if cell.value]
             self.assertIn("'=HYPERLINK(\"https://example.invalid\",\"click\")", values)
@@ -38,7 +39,14 @@ class SrpXlsxSecurityTests(unittest.TestCase):
             self.assertIn("'@SUM(A1:A2)", values)
             self.assertIn("'=cmd|' /C calc'!A0", values)
             self.assertIn("safetitle", values)
-            self.assertFalse(any(cell.data_type == "f" for row in sheet for cell in row))
+            self.assertFalse(
+                any(
+                    cell.data_type == "f"
+                    for worksheet in workbook.worksheets
+                    for row in worksheet
+                    for cell in row
+                )
+            )
 
 
 if __name__ == "__main__":

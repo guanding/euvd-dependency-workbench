@@ -195,7 +195,9 @@ class E2EPipelineTests(unittest.TestCase):
     def test_crash_mid_run_marks_failed_with_no_report_or_snapshot(self) -> None:
         job_id, upload_record, _ = self._setup_job(job_id="22222222-2222-2222-2222-222222222222")
 
-        async def raising_match(components, progress=None):
+        async def raising_match(
+            components, progress=None, *, monitoring_candidate_only=False
+        ):
             raise RuntimeError("injected mid-run failure")
 
         with patch.object(main, "match_components", raising_match):

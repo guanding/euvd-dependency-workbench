@@ -43,6 +43,64 @@ ART14_DECISIONS = {
 }
 EVIDENCE_EXPLOITATION_VALUES = {"unknown", "yes", "no"}
 VEX_SOURCES = {"cyclonedx-1.7", "csaf-2.0"}
+CASE_TYPES = {"actively_exploited_vulnerability", "severe_incident"}
+SEVERE_INCIDENT_CRITERIA_KEYS = {
+    "availability_authenticity_integrity_confidentiality_impact",
+    "malicious_code_introduction",
+    "rationale",
+}
+SRP_FIELD_KEYS = {
+    "reporter",
+    "manufacturer_name",
+    "manufacturer_contact",
+    "title",
+    "product_type",
+    "product_category",
+    "member_states_where_available",
+    "csirt_coordinator",
+    "user_notification",
+    "sensitivity",
+    "general_information",
+    "vulnerability_nature",
+    "exploit_nature",
+    "corrective_measures_taken",
+    "user_measures",
+    "full_vulnerability_description",
+    "vulnerability_severity",
+    "vulnerability_impact",
+    "malicious_actor",
+    "security_update_details",
+    "remediation_monitoring",
+    "incident_suspected_unlawful_or_malicious",
+    "incident_general_nature",
+    "incident_detected_at",
+    "incident_occurred_at",
+    "incident_initial_assessment",
+    "incident_corrective_measures_taken",
+    "incident_user_measures",
+    "incident_detailed_description",
+    "incident_severity",
+    "incident_impact",
+    "incident_likely_threat_or_root_cause",
+    "incident_applied_and_ongoing_mitigation_measures",
+}
+VULNERABILITY_SRP_FIELD_KEYS = {
+    "general_information",
+    "vulnerability_nature",
+    "exploit_nature",
+    "corrective_measures_taken",
+    "user_measures",
+    "full_vulnerability_description",
+    "vulnerability_severity",
+    "vulnerability_impact",
+    "malicious_actor",
+    "security_update_details",
+    "remediation_monitoring",
+}
+INCIDENT_SRP_FIELD_KEYS = {
+    key for key in SRP_FIELD_KEYS if key.startswith("incident_")
+}
+INCIDENT_SRP_DATE_TIME_FIELDS = {"incident_detected_at", "incident_occurred_at"}
 
 
 def utc_now() -> str:
@@ -123,6 +181,7 @@ class WorkflowStore:
                     job_id TEXT,
                     finding_index INTEGER,
                     source_key TEXT NOT NULL UNIQUE,
+                    case_type TEXT NOT NULL DEFAULT 'actively_exploited_vulnerability',
                     project_name TEXT NOT NULL,
                     project_version TEXT NOT NULL DEFAULT '',
                     software_build TEXT NOT NULL DEFAULT '',
@@ -167,6 +226,7 @@ class WorkflowStore:
                     submitted_at TEXT,
                     submission_receipt TEXT NOT NULL DEFAULT '',
                     srp_fields_json TEXT NOT NULL DEFAULT '{}',
+                    severe_incident_criteria_json TEXT NOT NULL DEFAULT '{}',
                     vex_source TEXT NOT NULL DEFAULT '',
                     vex_document_id TEXT NOT NULL DEFAULT '',
                     stale_reason TEXT NOT NULL DEFAULT '',
@@ -288,6 +348,10 @@ class WorkflowStore:
                 "reporting_stage": "TEXT NOT NULL DEFAULT 'not_started'",
                 "awareness_basis": "TEXT NOT NULL DEFAULT ''",
                 "awareness_evidence_refs_json": "TEXT NOT NULL DEFAULT '[]'",
+                "case_type": (
+                    "TEXT NOT NULL DEFAULT 'actively_exploited_vulnerability'"
+                ),
+                "severe_incident_criteria_json": "TEXT NOT NULL DEFAULT '{}'",
             }.items():
                 if column not in case_columns:
                     connection.execute(
@@ -306,6 +370,10 @@ class WorkflowStore:
                     connection.execute(
                         f"ALTER TABLE evidence ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0"
                     )
+            connection.execute(
+                "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(3, ?)",
+                (utc_now(),),
+            )
 
     @staticmethod
     def _ensure_column(
@@ -498,6 +566,9 @@ class WorkflowStore:
     def _case_dict(row: sqlite3.Row) -> dict[str, Any]:
         item = dict(row)
         item["srp_fields"] = json.loads(item.pop("srp_fields_json") or "{}")
+        item["severe_incident_criteria"] = json.loads(
+            item.pop("severe_incident_criteria_json") or "{}"
+        )
         item["awareness_evidence_refs"] = json.loads(
             item.pop("awareness_evidence_refs_json") or "[]"
         )
@@ -716,21 +787,27 @@ class WorkflowStore:
         project_name = str(payload.get("project_name") or "").strip()
         if not project_name:
             raise ValueError("产品名称不能为空")
+        case_type = str(
+            payload.get("case_type") or "actively_exploited_vulnerability"
+        )
+        if case_type not in CASE_TYPES:
+            raise ValueError("Art.14 案件类型无效")
         case_id = str(uuid.uuid4())
         now = utc_now()
         with self.connect() as connection:
             connection.execute(
                 """
                 INSERT INTO cases(
-                    id, source_key, project_name, project_version, software_build,
+                    id, source_key, case_type, project_name, project_version, software_build,
                     customer, component_name, component_version, cve_id, euvd_id,
                     public_exploitation_status, exploitation_evidence_summary,
                     created_at, updated_at
-                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     case_id,
                     f"manual:{case_id}",
+                    case_type,
                     project_name,
                     str(payload.get("project_version") or ""),
                     str(payload.get("software_build") or ""),
@@ -751,6 +828,7 @@ class WorkflowStore:
                 "manual_case_created",
                 actor,
                 {
+                    "case_type": case_type,
                     "zero_day_without_public_id_supported": not bool(
                         payload.get("cve_id") or payload.get("euvd_id")
                     ),
@@ -839,6 +917,7 @@ class WorkflowStore:
             "corrective_measure_available_at",
             "next_review_at",
             "srp_fields",
+            "severe_incident_criteria",
         }
         clean = {key: value for key, value in updates.items() if key in allowed}
         if not clean:
@@ -860,6 +939,106 @@ class WorkflowStore:
             existing = self.get_case(case_id)
             if not existing.get("applicability_justification"):
                 raise ValueError("known_not_affected 必须填写技术理由")
+        if "severe_incident_criteria" in clean:
+            criteria = clean["severe_incident_criteria"]
+            if not isinstance(criteria, dict):
+                raise ValueError("严重事件准则必须是对象")
+            unknown = set(criteria) - SEVERE_INCIDENT_CRITERIA_KEYS
+            if unknown:
+                raise ValueError(
+                    "严重事件准则包含未知字段: " + ", ".join(sorted(unknown))
+                )
+            for key in (
+                "availability_authenticity_integrity_confidentiality_impact",
+                "malicious_code_introduction",
+            ):
+                if key in criteria and not isinstance(criteria[key], bool):
+                    raise ValueError(f"严重事件准则 {key} 必须是布尔值")
+            criteria_rationale = str(criteria.get("rationale") or "").strip()
+            if len(criteria_rationale) > 8_000:
+                raise ValueError("严重事件准则理由超过 8000 字符")
+            clean["severe_incident_criteria"] = {
+                "availability_authenticity_integrity_confidentiality_impact": bool(
+                    criteria.get(
+                        "availability_authenticity_integrity_confidentiality_impact"
+                    )
+                ),
+                "malicious_code_introduction": bool(
+                    criteria.get("malicious_code_introduction")
+                ),
+                "rationale": criteria_rationale,
+            }
+        if "srp_fields" in clean:
+            fields = clean["srp_fields"]
+            if not isinstance(fields, dict):
+                raise ValueError("SRP 字段必须是对象")
+            unknown = set(fields) - SRP_FIELD_KEYS
+            if unknown:
+                raise ValueError("SRP 字段包含未知字段: " + ", ".join(sorted(unknown)))
+            current_case = self.get_case(case_id)
+            inappropriate = set(fields) & (
+                VULNERABILITY_SRP_FIELD_KEYS
+                if current_case.get("case_type") == "severe_incident"
+                else INCIDENT_SRP_FIELD_KEYS
+            )
+            if inappropriate:
+                raise ValueError(
+                    "SRP 字段不适用于当前案件类型: "
+                    + ", ".join(sorted(inappropriate))
+                )
+            normalized_fields: dict[str, str] = {}
+            for key, value in fields.items():
+                if value is None:
+                    normalized_fields[key] = ""
+                    continue
+                if not isinstance(value, str):
+                    raise ValueError(f"SRP 字段 {key} 必须是文本")
+                if len(value) > 16_000:
+                    raise ValueError(f"SRP 字段 {key} 超过 16000 字符")
+                normalized = value.strip()
+                if key == "incident_suspected_unlawful_or_malicious" and normalized:
+                    normalized = normalized.casefold()
+                    if normalized not in {"yes", "no", "unknown"}:
+                        raise ValueError(
+                            "SRP 事件非法/恶意原因必须是 yes、no 或 unknown"
+                        )
+                if key == "product_type" and normalized:
+                    product_types = {
+                        "default": "Default",
+                        "important": "Important",
+                        "critical": "Critical",
+                    }
+                    if normalized.casefold() not in product_types:
+                        raise ValueError(
+                            "SRP 产品类型必须是 Default、Important 或 Critical"
+                        )
+                    normalized = product_types[normalized.casefold()]
+                if key in INCIDENT_SRP_DATE_TIME_FIELDS and normalized:
+                    try:
+                        parsed = datetime.fromisoformat(
+                            normalized.replace("Z", "+00:00")
+                        )
+                    except ValueError as exc:
+                        raise ValueError(f"SRP 字段 {key} 必须是 ISO 8601 日期时间") from exc
+                    if parsed.tzinfo is None:
+                        raise ValueError(f"SRP 字段 {key} 必须包含时区")
+                    parsed_utc = parsed.astimezone(timezone.utc)
+                    if parsed_utc > datetime.now(timezone.utc):
+                        raise ValueError(f"SRP 字段 {key} 不能在未来")
+                    normalized = parsed_utc.isoformat(timespec="seconds")
+                normalized_fields[key] = normalized
+            if all(
+                normalized_fields.get(key) for key in INCIDENT_SRP_DATE_TIME_FIELDS
+            ):
+                occurred_at = datetime.fromisoformat(
+                    normalized_fields["incident_occurred_at"]
+                )
+                detected_at = datetime.fromisoformat(
+                    normalized_fields["incident_detected_at"]
+                )
+                if occurred_at > detected_at:
+                    raise ValueError("SRP 事件发生时间不能晚于检测时间")
+            clean["srp_fields"] = normalized_fields
         for field in (
             "initial_assessment_completed_at",
             "corrective_measure_available_at",
@@ -880,9 +1059,16 @@ class WorkflowStore:
         columns: list[str] = []
         values: list[Any] = []
         for key, value in clean.items():
-            column = "srp_fields_json" if key == "srp_fields" else key
+            column = {
+                "srp_fields": "srp_fields_json",
+                "severe_incident_criteria": "severe_incident_criteria_json",
+            }.get(key, key)
             columns.append(f"{column} = ?")
-            values.append(_json(value) if key == "srp_fields" else value)
+            values.append(
+                _json(value)
+                if key in {"srp_fields", "severe_incident_criteria"}
+                else value
+            )
         columns.append("updated_at = ?")
         values.append(utc_now())
         values.append(case_id)
@@ -896,7 +1082,11 @@ class WorkflowStore:
             "exploitation_evidence_status",
             "exploitation_evidence_summary",
             "product_risk_summary",
+            "mitigation_summary",
             "initial_assessment_completed_at",
+            "corrective_measure_available_at",
+            "severe_incident_criteria",
+            "srp_fields",
         }
         with self.connect() as connection:
             if connection.execute(
@@ -1088,25 +1278,50 @@ class WorkflowStore:
         if decision == "reportable":
             if case["applicability_status"] != "known_affected":
                 raise ValueError("reportable 前必须确认具体产品为 known_affected")
-            if case["exploitation_evidence_status"] != "reliable_evidence":
-                raise ValueError("reportable 前必须确认存在可靠的实际恶意利用证据")
             if not case.get("awareness_at") or not case.get("awareness_confirmed_by"):
                 raise ValueError("reportable 前必须人工确认制造商 awareness 时间")
-            qualifying_evidence = [
-                item
-                for item in case.get("evidence") or []
-                if item.get("reliable_malicious_exploitation") == "yes"
-                and item.get("malicious_actor_confirmed")
-                and item.get("without_permission_confirmed")
-                and item.get("actual_exploitation_confirmed")
-                and item.get("product_relevance")
-                and item.get("sha256")
-                and (item.get("source_ref") or item.get("source_url"))
-            ]
-            if not qualifying_evidence:
-                raise ValueError(
-                    "reportable 必须绑定一条含来源、SHA-256、产品相关性、恶意行为者、未经许可和实际利用确认的结构化证据"
+            if case.get("case_type") == "severe_incident":
+                criteria = case.get("severe_incident_criteria") or {}
+                criteria_met = bool(
+                    criteria.get(
+                        "availability_authenticity_integrity_confidentiality_impact"
+                    )
+                    or criteria.get("malicious_code_introduction")
                 )
+                if not criteria_met or not str(criteria.get("rationale") or "").strip():
+                    raise ValueError(
+                        "reportable 严重事件必须确认至少一项 CRA Art.14(5) 准则并记录理由"
+                    )
+                qualifying_evidence = [
+                    item
+                    for item in case.get("evidence") or []
+                    if item.get("description")
+                    and item.get("product_relevance")
+                    and item.get("sha256")
+                    and (item.get("source_ref") or item.get("source_url"))
+                ]
+                if not qualifying_evidence:
+                    raise ValueError(
+                        "reportable 严重事件必须绑定含来源、SHA-256、产品相关性和影响说明的结构化证据"
+                    )
+            else:
+                if case["exploitation_evidence_status"] != "reliable_evidence":
+                    raise ValueError("reportable 前必须确认存在可靠的实际恶意利用证据")
+                qualifying_evidence = [
+                    item
+                    for item in case.get("evidence") or []
+                    if item.get("reliable_malicious_exploitation") == "yes"
+                    and item.get("malicious_actor_confirmed")
+                    and item.get("without_permission_confirmed")
+                    and item.get("actual_exploitation_confirmed")
+                    and item.get("product_relevance")
+                    and item.get("sha256")
+                    and (item.get("source_ref") or item.get("source_url"))
+                ]
+                if not qualifying_evidence:
+                    raise ValueError(
+                        "reportable 必须绑定一条含来源、SHA-256、产品相关性、恶意行为者、未经许可和实际利用确认的结构化证据"
+                    )
         if decision == "not_reportable":
             if not case.get("next_review_at"):
                 raise ValueError("not_reportable 必须设置下一次复核时间")
@@ -1203,7 +1418,11 @@ class WorkflowStore:
                 case_id,
                 f"{stage}_review_recorded",
                 reviewer,
-                {"decision": decision, "rationale": rationale},
+                {
+                    "decision": decision,
+                    "rationale": rationale,
+                    "case_type": case.get("case_type"),
+                },
             )
         return self.get_case(case_id)
 
@@ -1227,7 +1446,38 @@ class WorkflowStore:
         parsed = datetime.fromisoformat(submitted_at.replace("Z", "+00:00"))
         if parsed.tzinfo is None:
             raise ValueError("提交时间必须包含时区")
-        normalized = parsed.astimezone(timezone.utc).isoformat(timespec="seconds")
+        parsed_utc = parsed.astimezone(timezone.utc)
+        awareness = datetime.fromisoformat(
+            str(case["awareness_at"]).replace("Z", "+00:00")
+        ).astimezone(timezone.utc)
+        if parsed_utc < awareness:
+            raise ValueError("SRP 提交时间不能早于制造商 awareness 时间")
+        if parsed_utc > datetime.now(timezone.utc):
+            raise ValueError("SRP 提交时间不能在未来")
+        normalized = parsed_utc.isoformat(timespec="seconds")
+        ordered_stages = ["early-warning", "notification", "final-report"]
+        existing_receipts = {
+            str(item.get("stage")): item
+            for item in case.get("submission_receipts") or []
+        }
+        stage_index = ordered_stages.index(stage)
+        missing_prerequisites = [
+            required
+            for required in ordered_stages[:stage_index]
+            if required not in existing_receipts
+        ]
+        if missing_prerequisites:
+            raise ValueError(
+                "必须先登记前序 SRP 阶段回执: "
+                + ", ".join(missing_prerequisites)
+            )
+        if stage_index:
+            previous = existing_receipts[ordered_stages[stage_index - 1]]
+            previous_time = datetime.fromisoformat(
+                str(previous["submitted_at"]).replace("Z", "+00:00")
+            ).astimezone(timezone.utc)
+            if parsed_utc < previous_time:
+                raise ValueError("SRP 提交时间不能早于前序阶段")
         reporting_stage = {
             "early-warning": "early_warning_submitted",
             "notification": "notification_submitted",
@@ -1277,6 +1527,8 @@ class WorkflowStore:
                     "submitted_at": normalized,
                     "receipt": receipt.strip(),
                     "api_submission": False,
+                    "submission_mode": "manual_only",
+                    "case_type": case.get("case_type"),
                 },
             )
         return self.get_case(case_id)

@@ -112,6 +112,35 @@
   border: 0;
 }
 
+.srp-assistance-controls {
+  margin-top: 14px !important;
+}
+
+.field.checkbox-label {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #f8fbfd;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: auto;
+  min-height: 0;
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+
+.field.checkbox-label > span {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
 .compact-panel > .field {
   margin-top: 12px;
 }

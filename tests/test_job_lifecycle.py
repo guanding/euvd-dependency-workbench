@@ -55,7 +55,9 @@ def _fake_result() -> dict:
     }
 
 
-async def _fake_match(components, progress=None):
+async def _fake_match(
+    components, progress=None, *, monitoring_candidate_only=False
+):
     for index, component in enumerate(components, start=1):
         if progress:
             await progress(index, len(components), getattr(component, "name", ""))
@@ -273,7 +275,9 @@ class JobLifecycleTests(unittest.TestCase):
         self._write_upload()
         self._write_job(job_id, status="running")
 
-        async def fake(components, progress=None):
+        async def fake(
+            components, progress=None, *, monitoring_candidate_only=False
+        ):
             # cancel arrives mid-run, before the first progress callback
             self._write_job(job_id, status="canceling")
             if progress:
@@ -288,6 +292,35 @@ class JobLifecycleTests(unittest.TestCase):
             asyncio.run(main._run_job(job_id, _upload_record(), {"name": "组件名称"}))
         saved = json.loads((self.job_dir / f"{job_id}.json").read_text())
         self.assertEqual(saved["status"], "cancelled")
+
+    def test_run_job_activates_candidate_only_mode_for_handoff_1_1(self) -> None:
+        job_id = "77777777-7777-7777-7777-777777777777"
+        self._write_job(job_id, status="queued")
+        record = _upload_record()
+        record["parsed"]["metadata_binding"] = {
+            "evidence": {
+                "monitoring_purpose": "PERIODIC_COMPONENT_RESCAN_CANDIDATE_ONLY",
+                "automatic_vulnerability_confirmation": False,
+                "automatic_art14_decision": False,
+                "version_applicability_boundary": "MANUAL_REVIEW_REQUIRED",
+            }
+        }
+        observed: dict[str, bool] = {}
+
+        async def fake(
+            components, progress=None, *, monitoring_candidate_only=False
+        ):
+            observed["candidate_only"] = monitoring_candidate_only
+            return _fake_result()
+
+        with ExitStack() as stack:
+            for patcher in self._patches():
+                stack.enter_context(patcher)
+            stack.enter_context(patch.object(main, "match_components", fake))
+            stack.enter_context(patch.object(main, "WORKFLOW_STORE"))
+            stack.enter_context(patch.object(main, "write_report"))
+            asyncio.run(main._run_job(job_id, record, {"name": "组件名称"}))
+        self.assertTrue(observed.get("candidate_only"))
 
 
 class OrchestratorAvailabilityTests(unittest.TestCase):

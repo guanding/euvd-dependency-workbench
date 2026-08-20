@@ -39,7 +39,8 @@ SRP 提交决定。
 4. 有 CVE/EUVD ID 时优先精确映射；没有漏洞标识符时回退到产品名候选检索。
 5. 查询 EU/CISA KEV 公开信号；命中与未命中都进入产品级 CRA Art.14 人工评估。
 6. 经 receipt/issuer 信任门导入 VEX，或导出草稿；记录产品适用性、证据、awareness、双人审批和复核期限。
-7. 检查 SRP Q16 分阶段字段，导出 JSON/XLSX/HTML 草稿并登记人工提交回执。
+7. 检查 SRP Q16 分阶段字段，一键生成含 JSON/XLSX/HTML、门户核对表、证据索引、
+   manifest 与 SHA-256 的完整辅助上报包；人工确认后打开 ENISA 官方页面提交并登记回执。
 8. 下载带证据快照哈希、适用性状态和 SRP 准备度的 Excel 报告。
 
 ## 工作台
@@ -145,9 +146,21 @@ PASS 只证明本地软件链路，不证明数据时效性、SBOM 完整性、C
 - 漏洞报告触发依据为 CRA `Art.14(1)`。制造商人工确认 awareness 后，
   工具按 `Art.14(2)(a)-(c)` 计算 24h、72h 和
   修正/缓解措施可用后 14 日的最迟期限；界面同时保留 “without undue delay” 提示。
-- 工具不覆盖 `Art.14(3)-(5)` 的严重安全事件分阶段报告流程。
+- 严重安全事件依据 `Art.14(3)-(5)` 建立独立案件类型：人工确认两项严重性准则、
+  24h/72h 阶段字段（包括检测时间、发生时间、初步评估与应对措施），
+  并以实际 72h notification 回执时间为锚计算一个日历月后的
+  final report 最迟期限；`Art.14(6)` 中间报告仍按主管 CSIRT 的具体请求人工处理。
 - SRP 路由边界对应 `Art.14(7)` 与 `Art.16`。
-- 当前工具只生成 SRP 草稿并记录人工提交回执，不实现或声称自动 SRP 提交。
+- SRP 辅助上报绑定 `enisa-cra-srp-q16-2026-08-03` 字段配置；每个阶段可生成
+  ZIP 包，内含 JSON、XLSX、HTML、Q16 门户逐项核对表、人工提交说明、证据元数据索引、
+  package manifest 与 SHA-256。
+- ENISA FAQ Q15 明确现阶段不提供 API。因此操作链固定为“生成材料 → 授权人员逐项确认
+  → 打开官方 SRP → 在门户点击 Submit → 保存官方通知 ID/状态/邮件或告警 → 回填手工回执”。
+  工具不保存 EU Login 凭据、不做浏览器填表自动化，也不实现或声称自动 SRP 提交。
+- 截至字段配置核对日，ENISA 尚未公布正式门户 URL；前端会打开官方 SRP 信息页。正式
+  URL 发布后，仅可在核验域名、流程与字段配置后更新 `config/srp-q16-2026-08-03.json`。
+- Workbench handoff 1.1 receipt 只启用周期重扫候选模式；即使规则原本命中，
+  Web 也强制改为“需复核”，不自动确认漏洞、版本适用性或 Art.14 结论。
 - 公开 KEV/EUVD 信号是调查触发器，不是 `Art.3(42)` 的产品级最终证据。
 
 ## 准确性与覆盖率
@@ -300,7 +313,9 @@ docker compose down
 - EUVD API: https://euvd.enisa.europa.eu/apidoc
 - EUVD: https://euvd.enisa.europa.eu/
 - ENISA SRP FAQ（含 Q16 字段矩阵）:
-  https://www.enisa.europa.eu/topics/product-security-and-certification/single-reporting-platform-srp
+  https://www.enisa.europa.eu/topics/product-security/single-reporting-platform-srp/frequently-asked-questions
+- ENISA SRP AR 操作指引:
+  https://www.enisa.europa.eu/topics/product-security/single-reporting-platform-srp/cra-srp-guidance-ar-notification-submission-and-update
 - CRA Regulation (EU) 2024/2847:
   https://eur-lex.europa.eu/eli/reg/2024/2847/oj/eng
 

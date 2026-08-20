@@ -149,7 +149,7 @@ class EvidencePayloadBuilderTests(unittest.TestCase):
 
     def test_project_identity_and_summary(self) -> None:
         payload = build_evidence_package_payload(self._job(), self.store, self.uploads)
-        self.assertEqual(payload["schema_version"], "1.0")
+        self.assertEqual(payload["schema_version"], "1.1")
         self.assertEqual(payload["project_identity"]["project_name"], "Gateway")
         self.assertEqual(payload["summary"]["component_count"], 2)
 

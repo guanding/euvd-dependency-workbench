@@ -317,7 +317,7 @@
           <div class="page-heading">
             <div>
               <h1>CRA Art.14 案件</h1>
-              <p>公开信号、产品适用性、积极利用证据和最终报告决定彼此分离</p>
+              <p>积极利用漏洞与严重安全事件共用受控案件流，但分别计算触发准则、字段和最终期限</p>
             </div>
             <button id="refreshFeedsButton" class="icon-text-button" type="button" title="一键更新 EUVD：请求编排器执行 增量同步 + KEV/CVE 刷新 + 消费者快照重建。需 mirror_ops.py watch 守护进程运行（约束：Web 只发请求，不直接同步）">
               <i data-lucide="refresh-cw" aria-hidden="true"></i>
@@ -327,20 +327,26 @@
 
           <div class="compliance-notice">
             <strong>人工决定边界</strong>
-            <span>KEV/EUVD 命中不会自动触发报告；未命中也不是“不需报告”。awareness 只能由授权人员基于初评和证据确认。</span>
+            <span>KEV/EUVD 命中不会自动触发报告；严重事件也必须人工确认 Art.14(5) 准则。awareness 只能由授权人员基于初评和证据确认。</span>
           </div>
           <div id="feedSnapshotStatus" class="status-strip"></div>
 
           <div class="case-tools-grid">
             <section class="work-panel compact-panel">
-              <div class="panel-heading"><div><h2>建立零日/人工案件</h2><p>CVE/EUVD ID 可留空</p></div></div>
+              <div class="panel-heading"><div><h2>建立人工案件</h2><p>支持积极利用漏洞或严重安全事件；CVE/EUVD ID 可留空</p></div></div>
               <div class="metadata-grid">
+                <label class="field"><span>案件类型 *</span>
+                  <select id="manualCaseType">
+                    <option value="actively_exploited_vulnerability">积极利用漏洞（Art.14(1)-(2)）</option>
+                    <option value="severe_incident">严重安全事件（Art.14(3)-(5)）</option>
+                  </select>
+                </label>
                 <label class="field"><span>产品名称 *</span><input id="manualProductName" type="text" /></label>
                 <label class="field"><span>产品版本</span><input id="manualProductVersion" type="text" /></label>
                 <label class="field"><span>组件</span><input id="manualComponentName" type="text" /></label>
                 <label class="field"><span>CVE</span><input id="manualCveId" type="text" placeholder="可选" /></label>
                 <label class="field"><span>EUVD ID</span><input id="manualEuvdId" type="text" placeholder="可选" /></label>
-                <label class="field field-wide"><span>漏洞/信号摘要</span><textarea id="manualSummary" rows="3"></textarea></label>
+                <label class="field field-wide"><span>漏洞/事件/信号摘要</span><textarea id="manualSummary" rows="3"></textarea></label>
               </div>
               <button id="createManualCaseButton" class="icon-text-button primary" type="button">建立案件</button>
             </section>
@@ -405,7 +411,7 @@
                   </select>
                 </label>
                 <label class="field"><span>适用性技术理由</span><textarea id="caseApplicabilityReason" rows="4"></textarea></label>
-                <label class="field"><span>积极利用证据状态</span>
+                <label class="field vulnerability-only"><span>积极利用证据状态</span>
                   <select id="caseEvidenceStatus">
                     <option value="not_assessed">not_assessed</option>
                     <option value="reliable_evidence">reliable_evidence</option>
@@ -413,30 +419,38 @@
                     <option value="no_evidence_found">no_evidence_found</option>
                   </select>
                 </label>
-                <label class="field"><span>利用证据摘要</span><textarea id="caseEvidenceSummary" rows="3"></textarea></label>
+                <label class="field vulnerability-only"><span>利用证据摘要</span><textarea id="caseEvidenceSummary" rows="3"></textarea></label>
+                <div id="severeIncidentCriteria" class="field field-wide hidden">
+                  <span>CRA Art.14(5) 严重事件准则</span>
+                  <div class="checkbox-grid">
+                    <label><input id="incidentDataFunctionImpact" type="checkbox" /> 已影响或可能影响敏感/重要数据或功能的可用性、真实性、完整性或机密性</label>
+                    <label><input id="incidentMaliciousCode" type="checkbox" /> 已导致或可能导致产品或用户网络引入/执行恶意代码</label>
+                  </div>
+                  <label class="field"><span>准则判断理由 *</span><textarea id="incidentCriteriaRationale" rows="4"></textarea></label>
+                </div>
                 <label class="field"><span>产品风险分析</span><textarea id="caseRiskSummary" rows="3"></textarea></label>
                 <label class="field"><span>缓解/修正措施</span><textarea id="caseMitigation" rows="3"></textarea></label>
                 <label class="field"><span>初步评估完成时间</span><input id="caseInitialAssessment" type="datetime-local" /></label>
-                <label class="field"><span>修正措施可用时间</span><input id="caseCorrectiveAt" type="datetime-local" /></label>
+                <label class="field vulnerability-only"><span>修正措施可用时间</span><input id="caseCorrectiveAt" type="datetime-local" /></label>
                 <label class="field"><span>下一复核时间</span><input id="caseNextReview" type="datetime-local" /></label>
                 <label class="field"><span>记录人</span><input id="caseUpdateActor" type="text" value="local analyst" /></label>
                 <button id="saveCaseAnalysisButton" class="icon-text-button primary" type="button">保存分析</button>
               </section>
 
               <section class="work-panel compact-panel">
-                <h3>2. 结构化积极利用证据</h3>
+                <h3>2. 结构化产品级证据</h3>
                 <label class="field"><span>来源类型</span><input id="evidenceSourceType" type="text" placeholder="CSIRT / telemetry / threat intelligence" /></label>
                 <label class="field"><span>来源编号或文件</span><input id="evidenceSourceRef" type="text" /></label>
                 <label class="field"><span>来源 URL</span><input id="evidenceSourceUrl" type="url" /></label>
                 <label class="field"><span>响应/文件 SHA-256</span><input id="evidenceSha256" type="text" maxlength="64" /></label>
                 <label class="field"><span>证据描述 *</span><textarea id="evidenceDescription" rows="3"></textarea></label>
                 <label class="field"><span>与具体产品的关系</span><textarea id="evidenceProductRelevance" rows="3"></textarea></label>
-                <label class="field"><span>可靠性结论</span>
+                <label class="field vulnerability-only"><span>积极利用可靠性结论</span>
                   <select id="evidenceReliable">
                     <option value="unknown">unknown</option><option value="yes">yes</option><option value="no">no</option>
                   </select>
                 </label>
-                <div class="checkbox-grid">
+                <div class="checkbox-grid vulnerability-only">
                   <label><input id="evidenceMaliciousActor" type="checkbox" /> 已确认恶意行为者</label>
                   <label><input id="evidenceWithoutPermission" type="checkbox" /> 未经系统所有者许可</label>
                   <label><input id="evidenceActualExploit" type="checkbox" /> 已确认实际利用</label>
@@ -478,11 +492,27 @@
               </section>
 
               <section class="work-panel compact-panel field-wide">
-                <h3>5. ENISA SRP Q16 草稿字段</h3>
+                <h3>5. ENISA SRP 辅助上报</h3>
+                <p class="muted">字段配置绑定 ENISA FAQ Q16（2026-08-03）及界面指引（2026-08-14）；正式门户仍可能更新，提交前必须逐项确认。</p>
                 <div id="srpFieldsGrid" class="metadata-grid"></div>
                 <button id="saveSrpFieldsButton" class="icon-text-button primary" type="button">保存 SRP 草稿字段</button>
                 <div id="srpReadinessPanel" class="status-strip"></div>
                 <div id="caseExports" class="export-links"></div>
+                <div class="metadata-grid srp-assistance-controls">
+                  <label class="field"><span>生成包阶段</span>
+                    <select id="srpPackageStage"><option value="early-warning">24h early warning</option><option value="notification">72h notification</option><option value="final-report">Final report</option></select>
+                  </label>
+                  <div class="field field-wide">
+                    <span>完整辅助上报包</span>
+                    <button id="downloadSrpPackageButton" class="icon-text-button primary" type="button">生成完整上报包 ZIP</button>
+                  </div>
+                  <label class="field field-wide checkbox-label"><input id="srpHumanConfirmation" type="checkbox" /> <span>我已将生成内容与当前官方 SRP 表单逐项核对，并确认分类、期限、敏感性、成员国范围及复制字段无误。</span></label>
+                  <div class="field field-wide">
+                    <span>官方提交</span>
+                    <button id="openSrpPortalButton" class="icon-text-button" type="button" disabled>人工确认并打开 ENISA SRP 官方页面</button>
+                    <small id="srpPortalStatus" class="muted">本按钮不会代替您在官方门户点击 Submit；正式门户 URL 发布前将打开 ENISA SRP 信息页。</small>
+                  </div>
+                </div>
               </section>
 
               <section class="work-panel compact-panel">

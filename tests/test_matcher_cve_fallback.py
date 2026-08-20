@@ -110,6 +110,46 @@ class CveFallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(EuvdClient.search.called, "精确命中时不应回退")
         self.assertEqual(result["components"][0]["query_mode"], "identifier-exact")
 
+    async def test_handoff_monitoring_forces_confirmed_match_to_candidate(self) -> None:
+        EuvdClient.cve_mapping = AsyncMock(return_value=(
+            {"CVE-2024-1000": ["EUVD-EXACT"]}, {"mapping_source": "test"},
+        ))
+        EuvdClient.kev_index = AsyncMock(return_value=({}, {}))
+        EuvdClient.detail = AsyncMock(return_value=_product_item(
+            "EUVD-EXACT", "nginx", "nginx", "CVE-2024-1000", score=9.0))
+        EuvdClient.search = AsyncMock(return_value=([], {}))
+        component = Component(
+            row_number=1,
+            name="nginx",
+            version="1.0",
+            vendor="nginx",
+            cve_ids="CVE-2024-1000",
+        )
+        result = await match_components(
+            [component], monitoring_candidate_only=True
+        )
+
+        self.assertEqual(result["summary"]["confirmed_findings"], 0)
+        self.assertEqual(result["summary"]["review_findings"], 1)
+        self.assertEqual(result["matches"][0]["original_match_status"], "已匹配")
+        self.assertEqual(
+            result["matches"][0]["original_component_applicability"],
+            "受影响版本条件命中",
+        )
+        self.assertEqual(result["matches"][0]["match_status"], "需复核")
+        self.assertEqual(
+            result["matches"][0]["component_applicability"],
+            "待人工核验（周期重扫候选）",
+        )
+        self.assertTrue(result["matches"][0]["monitoring_candidate_only"])
+        self.assertFalse(
+            result["matches"][0]["automatic_vulnerability_confirmation"]
+        )
+        self.assertEqual(
+            result["monitoring_contract"]["version_applicability_boundary"],
+            "MANUAL_REVIEW_REQUIRED",
+        )
+
     async def test_cve_unmapped_and_no_product_match_still_records_unmapped(self) -> None:
         # CVE 未映射 + 产品候选也无 → 如实记 unmapped（不杜撰候选）
         EuvdClient.cve_mapping = AsyncMock(return_value=({}, {"mapping_source": "test"}))

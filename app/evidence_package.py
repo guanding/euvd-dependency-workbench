@@ -21,10 +21,11 @@ from typing import Any
 from openpyxl import Workbook
 from openpyxl.styles import Font
 
+from .art14 import SRP_FIELD_PROFILE, deadline_status, srp_readiness
 from .spreadsheet_io import _safe_cell
 from .workflow_store import WorkflowStore
 
-EVIDENCE_PACKAGE_SCHEMA_VERSION = "1.0"
+EVIDENCE_PACKAGE_SCHEMA_VERSION = "1.1"
 
 
 def _utc_now() -> str:
@@ -189,19 +190,41 @@ def _cra_judgment(c: dict[str, Any]) -> dict[str, Any]:
     """
     evidence = c.get("evidence") or []
     approvals = c.get("approvals") or []
-    reliable_rows = [
-        e
-        for e in evidence
-        if e.get("reliable_malicious_exploitation") == "yes"
-        and e.get("malicious_actor_confirmed")
-        and e.get("without_permission_confirmed")
-        and e.get("actual_exploitation_confirmed")
-        and e.get("product_relevance")
-        and e.get("sha256")
-        and (e.get("source_ref") or e.get("source_url"))
+    submission_receipts = [
+        {
+            "stage": item.get("stage"),
+            "submitted_at": item.get("submitted_at"),
+            "receipt": item.get("receipt"),
+            "recorded_by": item.get("recorded_by"),
+            "created_at": item.get("created_at"),
+        }
+        for item in c.get("submission_receipts") or []
     ]
+    case_type = c.get("case_type") or "actively_exploited_vulnerability"
+    if case_type == "severe_incident":
+        reliable_rows = [
+            e
+            for e in evidence
+            if e.get("description")
+            and e.get("product_relevance")
+            and e.get("sha256")
+            and (e.get("source_ref") or e.get("source_url"))
+        ]
+    else:
+        reliable_rows = [
+            e
+            for e in evidence
+            if e.get("reliable_malicious_exploitation") == "yes"
+            and e.get("malicious_actor_confirmed")
+            and e.get("without_permission_confirmed")
+            and e.get("actual_exploitation_confirmed")
+            and e.get("product_relevance")
+            and e.get("sha256")
+            and (e.get("source_ref") or e.get("source_url"))
+        ]
     return {
         "case_id": c.get("id"),
+        "case_type": case_type,
         "finding_index": c.get("finding_index"),
         "cve_id": c.get("cve_id") or "",
         "euvd_id": c.get("euvd_id") or "",
@@ -209,6 +232,18 @@ def _cra_judgment(c: dict[str, Any]) -> dict[str, Any]:
         "art14_decision": c.get("art14_decision") or "not_assessed",
         "workflow_status": c.get("workflow_status") or "",
         "decision_rationale": c.get("decision_rationale") or "",
+        "reporting": {
+            "submission_mode": "manual_only",
+            "automatic_submission": False,
+            "reporting_stage": c.get("reporting_stage") or "not_started",
+            "srp_schema_profile": SRP_FIELD_PROFILE,
+            "deadlines": deadline_status(c),
+            "readiness": {
+                stage: srp_readiness(c, stage)
+                for stage in ("early-warning", "notification", "final-report")
+            },
+            "submission_receipts": submission_receipts,
+        },
         "basis": {
             "applicability": {
                 "status": c.get("applicability_status"),
@@ -224,6 +259,7 @@ def _cra_judgment(c: dict[str, Any]) -> dict[str, Any]:
                 "basis": c.get("awareness_basis"),
             },
             "reliable_evidence_rows": len(reliable_rows),
+            "severe_incident_criteria": c.get("severe_incident_criteria") or {},
             "four_eye_approval": {
                 "technical_reviewer": c.get("technical_reviewer"),
                 "compliance_reviewer": c.get("compliance_reviewer"),
@@ -231,7 +267,10 @@ def _cra_judgment(c: dict[str, Any]) -> dict[str, Any]:
             },
         },
         "legal_basis": (
-            "CRA Art.13/14 — Art.3(8) known vulnerability; Art.3(42) actively "
+            "CRA Art.14(3)-(7) severe incident assessment and phased reporting; "
+            "Art.16 SRP routing. (条款号引用；条文释义以官方文本为准。)"
+            if case_type == "severe_incident"
+            else "CRA Art.13/14 — Art.3(8) known vulnerability; Art.3(42) actively "
             "exploited; Art.14(1) reliable evidence of active exploitation + "
             "24h awareness clock. (条款号引用；条文释义以官方文本为准。)"
         ),
@@ -253,7 +292,7 @@ def write_evidence_xlsx(payload: dict[str, Any]) -> bytes:
     )
     _table_sheet(
         workbook.create_sheet("CRA报告判定"),
-        ["案件", "CVE", "EUVD", "art14_decision", "workflow_status", "可靠证据行", "四眼审批行"],
+        ["案件", "类型", "CVE", "EUVD", "art14_decision", "workflow_status", "SRP阶段", "人工回执数", "可靠证据行", "四眼审批行"],
         _judgment_rows(payload.get("cra_reportable_judgments") or []),
     )
     _table_sheet(
@@ -347,10 +386,13 @@ def _judgment_rows(judgments: list[dict[str, Any]]) -> list[list[Any]]:
     return [
         [
             j.get("case_id"),
+            j.get("case_type"),
             j.get("cve_id"),
             j.get("euvd_id"),
             j.get("art14_decision"),
             j.get("workflow_status"),
+            (j.get("reporting") or {}).get("reporting_stage"),
+            len((j.get("reporting") or {}).get("submission_receipts") or []),
             (j.get("basis") or {}).get("reliable_evidence_rows"),
             ((j.get("basis") or {}).get("four_eye_approval") or {}).get("approval_rows"),
         ]

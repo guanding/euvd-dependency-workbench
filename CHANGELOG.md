@@ -5,6 +5,14 @@ yet published a stable public release.
 
 ## 2.4.0-rc.1 - Unreleased
 
+- 增加 CRA Art.14(3)-(5) 严重安全事件案件类型、两项严重性准则、分阶段 SRP
+  字段和以 72h notification 回执为锚的一个日历月 final-report 期限。
+- SRP 草稿升级为 ENISA FAQ Q16 2026-08-03 字段配置，并增加逐字段门户映射与完整
+  辅助上报 ZIP 包；继续保持 manual-only，提交回执强制
+  early-warning → notification → final-report 顺序并保留审计事件。
+- 与 SBOM Workbench handoff schema 1.1 / EUVD Local Mirror 纯 CycloneDX
+  `components[]` 候选重扫链路对齐；候选不自动升级为漏洞确认或 Art.14 决定。
+
 ### Added
 
 - Explicit, fail-closed public-source and Windows portable allowlists.

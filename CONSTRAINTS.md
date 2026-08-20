@@ -15,11 +15,21 @@ Web 工作台只读消费本地 EUVD 快照；数据同步由 Mirror（`EUVD-Loc
 
 SBOM Workbench 经 `euvd_handoff.py` 产出单向、hash-bound 的 CycloneDX handoff（`direction=SBOM_TO_EUVD_ONLY`，`reverse_fact_write=false`）。EUVD Web 入口（`upload_preview` 经 `_extract_handoff_binding`）对 receipt 做 fail-closed 校验，任一不符即 HTTP 400：
 - `direction == "SBOM_TO_EUVD_ONLY"`
+- `schema_version == "1.1"` 且 receipt 字段集严格匹配 1.1 合同
 - `reverse_fact_write is False`
+- `automatic_art14_decision is False`
+- `automatic_vulnerability_confirmation is False`
+- `monitoring_purpose == "PERIODIC_COMPONENT_RESCAN_CANDIDATE_ONLY"`
+- `version_applicability_boundary == "MANUAL_REVIEW_REQUIRED"`
 - `cyclonedx_sha256 == sha256(落盘 cyclonedx)`
 - `classification == "SELF_TEST_NOT_CUSTOMER_EVIDENCE"`
 - `authority_boundary == "NO_SBOM_FACT_RELEASE_CONFORMITY_OR_REPORTING_AUTHORITY"`
 - `kev_boundary == "KEV_PRESENCE_IS_PRIORITIZATION_ONLY_ABSENCE_IS_NOT_NON_EXPLOITATION_PROOF"`
+
+通过该 receipt 的 Web 任务强制启用 candidate-only 模式：规则原本产生的
+`已匹配` 也改为 `需复核`，并在 JSON/XLSX 中保留
+`automatic_vulnerability_confirmation=false`、
+`automatic_art14_decision=false` 和版本人工复核边界。
 
 **已知残留**：单向性目前是字段级断言 + Web 入口校验，**非进程/网络级强制**。若有人在 EUVD Web 侧另写工具直读 SBOM Workbench `runtime/` 数据库，本机制不感知。升级为进程级强制需另立 sandbox-exec / 容器网络策略方案。
 
@@ -33,6 +43,21 @@ SBOM Workbench 产出是 `SOURCE_DERIVED_CANDIDATE / SELF_TEST_NOT_CUSTOMER_EVID
 
 漏洞匹配是独立下游工作流。EUVD 命中（含 KEV）只做优先级排序，**不能**自动形成 Art.14 报告决定（需人工 awareness + 产品级证据 + 四眼审批）。
 
-## C-6: Mirror CLI 与纯 SBOM 的已知 BLOCKER
+## C-5A: SRP 辅助上报包 ≠ 官方提交
 
-`sbom_match.py`（Mirror 侧 CLI）的 `read_cyclonedx` 以 `vulnerabilities[]` 为唯一发射门，纯 SBOM（无 vulnerabilities）产出 0 observation；且 `_component_context` 不抽 cpe。因此 Web 工作台产出的 job（走 Web 自带 `matcher.py`）**不会自动落 Mirror CLI**。"在 EUVD 上传 SBOM"的心智模型不应默认包含 Mirror 定时重扫 / 批量 CLI 匹配。若需 Mirror 消费纯 SBOM，须先修 BLOCKER（增加 components[] 发射口 + cpe 抽取 + properties[].syft:cpe23 解析）。
+工具可按 ENISA FAQ Q16 字段矩阵生成 JSON/XLSX/HTML、逐项核对表、证据索引、
+manifest 与 SHA-256，但该 ZIP 仍是本地准备材料。只有授权人员在官方 SRP 中确认并
+点击 Submit 后取得的通知 ID、状态、时间和邮件/告警才是提交证据。工具不保存
+EU Login 凭据、不自动填报官方网页、不调用不存在的 SRP API，也不把本地下载时间
+冒充提交时间。
+
+## C-6: Mirror CLI 与纯 SBOM 的周期重扫边界
+
+配套 `EUVD-Local-Mirror` 的 `sbom_match.py` 已增加 `components[]` 发射口，解析
+name、PURL、顶层 CPE 与 `properties[].syft:cpe23`，并用本地 EUVD 记录派生的
+产品精确名称索引生成周期重扫候选。候选状态不会自动确认版本受影响，也不会形成
+Art.14 决定；当前快照未找到候选同样不能解释为“无漏洞”。
+
+该能力属于独立 Mirror 工作树，**不会因本 Web 仓库升级而自动部署**。只有明确
+部署含上述 consumer contract 的 Mirror 版本，并由外部调度器按制造商政策触发
+SBOM 重扫时，才能声称周期重扫链路已启用；Web 上传仍不会自动落入 Mirror CLI。

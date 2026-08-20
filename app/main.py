@@ -28,12 +28,14 @@ from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .art14 import (
+    SRP_FIELD_PROFILE,
     SRP_STAGES,
     build_srp_payload,
     deadline_status,
     srp_readiness,
     write_srp_html,
     write_srp_json,
+    write_srp_submission_package_zip,
     write_srp_xlsx,
 )
 from .matcher import (
@@ -44,7 +46,13 @@ from .matcher import (
     refresh_public_snapshots,
     repair_text,
 )
-from .spreadsheet_io import build_components, read_sbom, write_report
+from .spreadsheet_io import (
+    HANDOFF_MONITORING_PURPOSE,
+    HANDOFF_VERSION_APPLICABILITY_BOUNDARY,
+    build_components,
+    read_sbom,
+    write_report,
+)
 from .template_builder import PUBLIC_TEMPLATE_FILENAME, template_bytes
 from .vex import parse_vex_bytes, write_vex
 from .vex_intake import VexIntakeError, verify_vex_intake_receipt
@@ -147,6 +155,10 @@ class ReviewerCreateRequest(BaseModel):
 
 
 class ManualCaseRequest(BaseModel):
+    case_type: str = Field(
+        default="actively_exploited_vulnerability",
+        pattern=r"^(actively_exploited_vulnerability|severe_incident)$",
+    )
     project_name: str = Field(min_length=1, max_length=160)
     project_version: str = Field(default="", max_length=100)
     software_build: str = Field(default="", max_length=160)
@@ -438,6 +450,15 @@ async def _run_job(job_id: str, upload_record: dict[str, Any], mapping: dict[str
     try:
         parsed = upload_record["parsed"]
         components = build_components(parsed, mapping, MAX_COMPONENTS)
+        handoff_evidence = (parsed.get("metadata_binding") or {}).get("evidence") or {}
+        monitoring_candidate_only = bool(
+            handoff_evidence.get("monitoring_purpose")
+            == HANDOFF_MONITORING_PURPOSE
+            and handoff_evidence.get("automatic_vulnerability_confirmation") is False
+            and handoff_evidence.get("automatic_art14_decision") is False
+            and handoff_evidence.get("version_applicability_boundary")
+            == HANDOFF_VERSION_APPLICABILITY_BOUNDARY
+        )
         job.update(
             {
                 "status": "running",
@@ -461,7 +482,11 @@ async def _run_job(job_id: str, upload_record: dict[str, Any], mapping: dict[str
             if completed == total or completed % 2 == 0:
                 _write_json(path, job)
 
-        result = await match_components(components, progress=progress)
+        result = await match_components(
+            components,
+            progress=progress,
+            monitoring_candidate_only=monitoring_candidate_only,
+        )
         result["input_sbom_snapshot"] = {
             "sheet": parsed.get("sheet") or "",
             "header_row": parsed.get("header_row") or 1,
@@ -588,6 +613,16 @@ async def health() -> dict[str, Any]:
         "euvd_network_fallback_enabled": NETWORK_FALLBACK,
         "euvd_local_status": local_status,
         "automatic_srp_submission": False,
+        "srp_submission_mode": "manual_only",
+        "srp_assistance_mode": "generate_review_confirm_open_official_portal",
+        "srp_information_url": SRP_FIELD_PROFILE["srp_information_url"],
+        "srp_portal_url": SRP_FIELD_PROFILE.get("portal_url"),
+        "srp_portal_url_status": SRP_FIELD_PROFILE["portal_url_status"],
+        "srp_field_profile": SRP_FIELD_PROFILE,
+        "art14_case_types": [
+            "actively_exploited_vulnerability",
+            "severe_incident",
+        ],
     }
 
 
@@ -1251,16 +1286,11 @@ def _safe_export_path(case_id: str, label: str, extension: str) -> Path:
     _canonical_uuid_text(case_id, "case_id")
     if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}", label):
         raise HTTPException(status_code=400, detail="导出标签无效")
-    if extension == "json":
-        suffix = ".json"
-    elif extension == "xlsx":
-        suffix = ".xlsx"
-    elif extension == "html":
-        suffix = ".html"
-    else:
+    allowed_extensions = {"json", "xlsx", "html", "zip"}
+    if extension not in allowed_extensions:
         raise HTTPException(status_code=400, detail="导出格式无效")
     output_root = OUTPUT_DIR.resolve()
-    candidate = (output_root / f"export-{uuid.uuid4().hex}{suffix}").resolve()
+    candidate = (output_root / f"export-{uuid.uuid4().hex}.{extension}").resolve()
     if candidate.parent != output_root:
         raise HTTPException(status_code=400, detail="导出路径无效")
     return candidate
@@ -1271,6 +1301,8 @@ async def export_case_vex(case_id: str, vex_format: str) -> FileResponse:
     if vex_format not in {"cyclonedx", "csaf"}:
         raise HTTPException(status_code=400, detail="VEX 格式必须是 cyclonedx 或 csaf")
     case = await asyncio.to_thread(_get_case_or_404, case_id)
+    if case.get("case_type") == "severe_incident":
+        raise HTTPException(status_code=409, detail="严重安全事件案件不适用 VEX 导出")
     path = _safe_export_path(case_id, f"vex-{vex_format}", "json")
     try:
         await asyncio.to_thread(write_vex, path, case, vex_format)
@@ -1316,6 +1348,23 @@ async def export_srp_draft(
         path,
         media_type=media_type,
         filename=f"{case_id}_srp-{stage}.{extension}",
+    )
+
+
+@app.get("/api/art14/cases/{case_id}/srp/{stage}/package.zip")
+async def export_srp_submission_package(case_id: str, stage: str) -> FileResponse:
+    if stage not in SRP_STAGES:
+        raise HTTPException(status_code=400, detail="SRP 阶段无效")
+    case = await asyncio.to_thread(_get_case_or_404, case_id)
+    path = _safe_export_path(case_id, f"srp-{stage}-assisted-package", "zip")
+    try:
+        await asyncio.to_thread(write_srp_submission_package_zip, path, case, stage)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=repair_text(exc)) from exc
+    return FileResponse(
+        path,
+        media_type="application/zip",
+        filename=f"{case_id}_srp-{stage}-assisted-package.zip",
     )
 
 
