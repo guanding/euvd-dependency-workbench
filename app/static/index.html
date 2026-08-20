@@ -473,7 +473,8 @@
               </section>
 
               <section class="work-panel compact-panel">
-                <h3>4. 四眼 Art.14 决定</h3>
+                <h3>4. 组织审批与 Art.14 决策记录</h3>
+                <p class="muted">本工作台默认使用技术/合规两步治理门；这是工具治理设计，不代表 CRA 规定必须由两名不同人员决定。</p>
                 <label class="field"><span>阶段</span>
                   <select id="reviewStage"><option value="technical">技术提议</option><option value="compliance">合规复核</option></select>
                 </label>
@@ -493,7 +494,14 @@
 
               <section class="work-panel compact-panel field-wide">
                 <h3>5. ENISA SRP 辅助上报</h3>
-                <p class="muted">字段配置绑定 ENISA FAQ Q16（2026-08-03）及界面指引（2026-08-14）；正式门户仍可能更新，提交前必须逐项确认。</p>
+                <p class="muted">字段配置绑定 ENISA FAQ Q16（2026-08-03）；ENISA 用户指引及正式门户仍可能更新，提交前必须逐项确认。</p>
+                <div class="srp-guide-entry">
+                  <div>
+                    <strong>首次使用或正在处理紧急上报？</strong>
+                    <p>先查看触发条件、24h/72h/Final 时限、材料核对、人工提交与官方回执要求。</p>
+                  </div>
+                  <a class="icon-text-button" href="/srp-guide.html" target="_blank" rel="noopener noreferrer">查看离线 SRP 操作指南</a>
+                </div>
                 <div id="srpFieldsGrid" class="metadata-grid"></div>
                 <button id="saveSrpFieldsButton" class="icon-text-button primary" type="button">保存 SRP 草稿字段</button>
                 <div id="srpReadinessPanel" class="status-strip"></div>

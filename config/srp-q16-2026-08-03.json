@@ -2,7 +2,6 @@
   "id": "enisa-cra-srp-q16-2026-08-03",
   "title": "ENISA CRA SRP FAQ Q16 field matrix",
   "faq_updated_at": "2026-08-03",
-  "interface_guidance_updated_at": "2026-08-14",
   "source_checked_at": "2026-08-20",
   "srp_information_url": "https://www.enisa.europa.eu/topics/product-security/single-reporting-platform-srp",
   "portal_url": null,
@@ -15,7 +14,6 @@
     "faq_q16": "https://www.enisa.europa.eu/topics/product-security/single-reporting-platform-srp/frequently-asked-questions",
     "registration": "https://www.enisa.europa.eu/topics/product-security/single-reporting-platform-srp/cra-srp-guidance-ar-user-registration",
     "notification_workflow": "https://www.enisa.europa.eu/topics/product-security/single-reporting-platform-srp/cra-srp-guidance-ar-notification-submission-and-update",
-    "interface_functions": "https://www.enisa.europa.eu/topics/product-security/single-reporting-platform-srp/cra-srp-guidance-ar-interface-functions",
     "cra": "https://eur-lex.europa.eu/eli/reg/2024/2847/oj/eng",
     "delegated_regulation_2026_881": "https://eur-lex.europa.eu/eli/reg_del/2026/881/oj/eng"
   },

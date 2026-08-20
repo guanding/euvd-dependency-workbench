@@ -12,6 +12,10 @@ yet published a stable public release.
   early-warning → notification → final-report 顺序并保留审计事件。
 - 与 SBOM Workbench handoff schema 1.1 / EUVD Local Mirror 纯 CycloneDX
   `components[]` 候选重扫链路对齐；候选不自动升级为漏洞确认或 Art.14 决定。
+- 在工作台内嵌入无外部脚本的离线 SRP 操作指南，覆盖触发判断、法定时限、
+  分阶段材料、人工提交、官方回执和异常路径；同时明确技术/合规两步审批是
+  工具治理设计，而非 CRA 规定的法定人数要求。SRP 来源登记仅保留当前可由
+  ENISA 官网核验的页面，不为尚未发布的界面指引预置日期或链接。
 
 ### Added
 

@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>SRP 上报操作指南 · EUVD Dependency Workbench</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="guide-body">
+    <a class="guide-skip-link" href="#guide-main">跳至主要内容</a>
+
+    <header class="guide-topbar">
+      <a class="guide-brand" href="/" aria-label="返回 EUVD Dependency Workbench">
+        <span class="brand-mark" aria-hidden="true">EU</span>
+        <span>
+          <strong>EUVD Dependency Workbench</strong>
+          <small>CRA Art.14 · SRP 操作指南</small>
+        </span>
+      </a>
+      <a class="icon-text-button header-button" href="/">返回工作台</a>
+    </header>
+
+    <main id="guide-main" class="guide-shell">
+      <section class="guide-hero" aria-labelledby="guide-title">
+        <div class="guide-hero-copy">
+          <p class="guide-kicker">CRA Article 14 · Human-confirmed reporting</p>
+          <h1 id="guide-title">ENISA SRP 上报操作指南</h1>
+          <p class="guide-lead">
+            从触发判断到材料准备、官方提交和回执归档的一条可执行路径。
+            本页不接收案件数据，也不会代替授权人员在官方 SRP 点击 Submit。
+          </p>
+        </div>
+        <div class="guide-boundary" role="note" aria-label="EUVD 与 SRP 的边界">
+          <strong>EUVD 是查，SRP 是报。</strong>
+          <p>
+            EUVD 提供公开漏洞情报和调查线索；SRP 是 CRA 法定通知入口。
+            EUVD/KEV 命中不能自动形成 Art.14 决定，未命中也不能证明无需上报。
+          </p>
+        </div>
+        <div class="guide-readiness" role="note">
+          <strong>当前官方上线边界</strong>
+          <p>
+            ENISA 当前计划 SRP 自 2026-09-11 起投入使用并用于 CRA 强制上报。本工具的正式门户地址仍保持未配置；
+            在官方入口开放前，应核对 ENISA 的测试、注册和协调指示，不能把本地材料当作有效提交。
+          </p>
+        </div>
+        <nav class="guide-jump" aria-label="指南快速导航">
+          <a href="#trigger">触发判断</a>
+          <a href="#deadlines">法定时限</a>
+          <a href="#prepare">材料准备</a>
+          <a href="#submit">人工提交</a>
+          <a href="#exceptions">异常与 PEC</a>
+          <a href="#sources">官方来源</a>
+        </nav>
+      </section>
+
+      <section id="trigger" class="guide-section" aria-labelledby="trigger-title">
+        <div class="guide-section-mark" aria-hidden="true">01</div>
+        <div class="guide-section-content">
+          <p class="guide-eyebrow">先判断，再启动时钟</p>
+          <h2 id="trigger-title">哪些事项进入 CRA Art.14 强制上报</h2>
+          <div class="guide-criteria-grid">
+            <article class="guide-criterion">
+              <p class="guide-code">AEV · CRA Art.3(42), Art.14(1)</p>
+              <h3>积极利用漏洞</h3>
+              <ul>
+                <li>漏洞存在于制造商的具体产品、版本、构建或配置中；</li>
+                <li>产品可达路径和受影响条件成立；</li>
+                <li>有可靠证据表明恶意行为者已在系统中，未经系统所有者许可实际利用该漏洞；</li>
+                <li>制造商授权人员确认 awareness 时间及依据。</li>
+              </ul>
+            </article>
+            <article class="guide-criterion">
+              <p class="guide-code">SI · CRA Art.14(3)-(5)</p>
+              <h3>对产品安全有严重影响的事件</h3>
+              <ul>
+                <li>对产品保护敏感或重要数据或功能的可用性、真实性、完整性或保密性的能力产生或可能产生负面影响；或</li>
+                <li>导致或可能导致恶意代码在产品或用户网络与信息系统中被引入或执行；</li>
+                <li>判断绑定产品事实、影响范围、不确定性和证据。</li>
+              </ul>
+            </article>
+          </div>
+          <div class="guide-caution" role="note">
+            <strong>不能单独作为强制上报结论：</strong>
+            普通 CVE、单纯 EUVD/KEV 条目、通用 CVSS 分数、扫描告警或经授权的善意安全研究。
+            信息不足时记录“需要更多信息”并继续取证，不能用“未命中”直接关闭案件。
+          </div>
+        </div>
+      </section>
+
+      <section id="deadlines" class="guide-section" aria-labelledby="deadlines-title">
+        <div class="guide-section-mark" aria-hidden="true">02</div>
+        <div class="guide-section-content">
+          <p class="guide-eyebrow">Without undue delay</p>
+          <h2 id="deadlines-title">24h、72h 与 Final 是最迟边界，不是等待窗口</h2>
+          <div class="guide-timeline" aria-label="SRP 三阶段报告时间线">
+            <article>
+              <span>24h</span>
+              <div>
+                <h3>Early Warning</h3>
+                <p>自制造商 awareness 起，无不当延迟且最迟 24 小时。</p>
+              </div>
+            </article>
+            <article>
+              <span>72h</span>
+              <div>
+                <h3>Notification</h3>
+                <p>在同一 notification 中补充事实，无不当延迟且最迟 72 小时。</p>
+              </div>
+            </article>
+            <article>
+              <span>Final</span>
+              <div>
+                <h3>Final Report</h3>
+                <p>AEV：修正或缓解措施可用后最迟 14 天。</p>
+                <p>SI：实际提交 72h incident notification 后 1 个日历月内。</p>
+              </div>
+            </article>
+          </div>
+          <p class="guide-inline-note">
+            <strong>awareness 必须人工确认：</strong>扫描时间、CVE 发布时间、EUVD 入库时间、
+            邮件到达时间或内部审批完成时间都不能由系统自动替代制造商 awareness。
+          </p>
+        </div>
+      </section>
+
+      <section class="guide-section" aria-labelledby="first-actions-title">
+        <div class="guide-section-mark" aria-hidden="true">03</div>
+        <div class="guide-section-content">
+          <p class="guide-eyebrow">组织内部应急建议 · 非法定分钟数</p>
+          <h2 id="first-actions-title">最初 15 分钟：先固定事实和责任人</h2>
+          <ol class="guide-action-list">
+            <li><strong>0–3 分钟</strong><span>建立唯一案件 ID，锁定产品、版本/构建、来源和 AEV/SI 类型。</span></li>
+            <li><strong>3–6 分钟</strong><span>由授权人员记录 awareness 时间、依据和证据引用。</span></li>
+            <li><strong>6–9 分钟</strong><span>核对 AEV 或 SI 条件；有疑问时升级支持，但不中止事实收集。</span></li>
+            <li><strong>9–12 分钟</strong><span>计算期限，指定 Assigned Representative、协调方和内部负责人。</span></li>
+            <li><strong>12–15 分钟</strong><span>建立 Art.14 案件并准备 Early Warning；工具不可用时直接转入官方 SRP。</span></li>
+          </ol>
+        </div>
+      </section>
+
+      <section id="prepare" class="guide-section" aria-labelledby="prepare-title">
+        <div class="guide-section-mark" aria-hidden="true">04</div>
+        <div class="guide-section-content">
+          <p class="guide-eyebrow">Workbench 辅助准备</p>
+          <h2 id="prepare-title">形成可核对、可传递的阶段材料</h2>
+          <div class="guide-flow" aria-label="从建案到回执的操作流程">
+            <div><strong>建案</strong><span>选择 AEV 或 SI，绑定产品和证据</span></div>
+            <div><strong>确认</strong><span>记录 applicability、影响和 awareness</span></div>
+            <div><strong>决策</strong><span>完成组织审批门和 reportable 理由</span></div>
+            <div><strong>生成</strong><span>按阶段生成完整辅助上报包</span></div>
+            <div><strong>核对</strong><span>逐项对照当日官方门户</span></div>
+            <div><strong>归档</strong><span>保存官方 ID、状态、时间和回执</span></div>
+          </div>
+          <div class="guide-package-grid">
+            <div><code>SRP_DRAFT.json</code><span>机器可读草稿与字段映射</span></div>
+            <div><code>SRP_DRAFT.xlsx</code><span>线下核对与协作</span></div>
+            <div><code>SRP_DRAFT.html</code><span>浏览和打印审阅</span></div>
+            <div><code>PORTAL_FIELD_CHECKLIST.md</code><span>按 Q16 ID 对照门户</span></div>
+            <div><code>EVIDENCE_INDEX.json</code><span>证据元数据索引</span></div>
+            <div><code>PACKAGE_MANIFEST.json</code><span>阶段、边界和文件哈希</span></div>
+            <div><code>SHA256SUMS</code><span>传递完整性校验</span></div>
+            <div><code>HUMAN_REVIEW_AND_SUBMISSION.md</code><span>人工提交步骤和限制</span></div>
+          </div>
+          <div class="guide-caution guide-caution-strong" role="note">
+            <strong>本地材料就绪不等于官方已提交。</strong>
+            ZIP、下载时间、页面截图或“已打开门户”都不是 ENISA 接受证明。
+          </div>
+        </div>
+      </section>
+
+      <section class="guide-section" aria-labelledby="check-title">
+        <div class="guide-section-mark" aria-hidden="true">05</div>
+        <div class="guide-section-content">
+          <p class="guide-eyebrow">点击官方入口之前</p>
+          <h2 id="check-title">提交前人工核对</h2>
+          <ul class="guide-checklist">
+            <li>官方页面域名、notification type、stage 和实时必填提示正确；</li>
+            <li>awareness、阶段期限及 Final 起算锚点正确；</li>
+            <li>制造商、产品、产品类别和可获得成员国准确；</li>
+            <li>AEV/SI 事实、严重性、敏感性及 PEC 评估理由有证据支持；</li>
+            <li>已采取措施、用户可采取措施和用户通知计划完整；</li>
+            <li>从前阶段复制的字段仍然准确，未知信息没有被编造；</li>
+            <li>材料不包含凭据、不必要个人数据或无权披露的信息；</li>
+            <li>源证据、组织授权和内部决定仍可追溯。</li>
+          </ul>
+          <p class="guide-inline-note">
+            本工作台默认设置技术/合规两步组织治理门；这是工具治理设计，
+            不是 CRA 规定必须由两名不同人员作出决定。
+          </p>
+        </div>
+      </section>
+
+      <section id="submit" class="guide-section" aria-labelledby="submit-title">
+        <div class="guide-section-mark" aria-hidden="true">06</div>
+        <div class="guide-section-content">
+          <p class="guide-eyebrow">官方门户是唯一提交事实源</p>
+          <h2 id="submit-title">人工提交并保存官方回执</h2>
+          <div class="guide-stage-table-wrap" role="region" aria-label="SRP 三阶段官方操作和最低回执表" tabindex="0">
+            <table class="guide-stage-table">
+              <caption>三个报告阶段的官方操作和最低回执</caption>
+              <thead>
+                <tr>
+                  <th scope="col">阶段</th>
+                  <th scope="col">官方操作</th>
+                  <th scope="col">至少保存</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row">24h Early Warning</th>
+                  <td>使用 Active Assigned Representative 登录，选择正确制造商，填写本阶段字段并点击 Submit。</td>
+                  <td>Notification ID、Early Warning 状态、官方提交时间、邮件或告警。</td>
+                </tr>
+                <tr>
+                  <th scope="row">72h Notification</th>
+                  <td>打开同一 notification，在 72h 页面补充字段并复核复制内容。</td>
+                  <td>同一 Notification ID、72h Submitted/相关状态、时间和告警。</td>
+                </tr>
+                <tr>
+                  <th scope="row">Final Report</th>
+                  <td>确认前序阶段和全部 Final 字段后提交；提交后记录可能不可编辑。</td>
+                  <td>FR Submitted/Final Report 状态、时间、邮件、告警及必要截图。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="guide-inline-note">
+            返回 Workbench 后，按 Early Warning → 72h → Final 的顺序登记官方时间和回执编号。
+            本工具不会自动向官方 SRP 提交，也不保存 EU Login 凭据。
+          </p>
+        </div>
+      </section>
+
+      <section id="exceptions" class="guide-section" aria-labelledby="exceptions-title">
+        <div class="guide-section-mark" aria-hidden="true">07</div>
+        <div class="guide-section-content">
+          <p class="guide-eyebrow">独立义务与异常路径</p>
+          <h2 id="exceptions-title">用户通知、PEC 和不可用场景</h2>
+          <div class="guide-disclosures">
+            <section class="guide-disclosure" aria-labelledby="user-notification-title">
+              <h3 id="user-notification-title">用户通知不是 SRP 的附属动作</h3>
+              <p>
+                CRA Art.14(8) 要求制造商在 awareness 后通知受影响用户，并在适当时通知所有用户；
+                必要时还要说明用户可采取的风险缓解或修正措施，并在适当时采用易于自动处理的结构化、机器可读格式。
+                应记录对象、渠道、时间、覆盖范围、用户措施和发送证据；SRP 提交不能替代该义务。
+              </p>
+            </section>
+            <section class="guide-disclosure" aria-labelledby="pec-title">
+              <h3 id="pec-title">延迟分发与 PEC 不暂停制造商的 Art.14 时钟</h3>
+              <p>
+                对 AEV/SI 通知延迟向其他相关 CSIRT 分发，只能由最初接收通知的 CDaC 基于正当网络安全理由决定，
+                且仅限严格必要的时间；制造商可提出请求和敏感性信息，但不能自行批准。
+              </p>
+              <p>
+                限制 ENISA 同时访问完整内容的“特别例外情形”范围更窄：只适用于 CRA Art.14(2)(b) 的 72h AEV 通知，
+                并须满足 CRA Art.16(2) 所列条件。两者都不是普通商业保密开关，也不暂停制造商的 Art.14 上报期限；
+                具体适用以 CDaC、实时门户和主管方指示为准。
+              </p>
+            </section>
+            <section class="guide-disclosure" aria-labelledby="unavailable-title">
+              <h3 id="unavailable-title">工具或官方页面不可用时</h3>
+              <p>
+                工具不可用时直接进入官方 SRP，不得等待工具恢复而错过期限。官方页面不可用时，
+                记录 UTC 时间、错误和重试证据，联系 ENISA/协调方并遵循官方备用指示；不要自行猜测非官方通道。
+              </p>
+            </section>
+            <section class="guide-disclosure" aria-labelledby="final-error-title">
+              <h3 id="final-error-title">Final 后发现错误时</h3>
+              <p>
+                保留原始提交和错误证据，联系 ENISA/协调方并按官方指示补救；不得覆盖历史记录或伪造新回执替代旧提交。
+              </p>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section id="sources" class="guide-section" aria-labelledby="sources-title">
+        <div class="guide-section-mark" aria-hidden="true">08</div>
+        <div class="guide-section-content">
+          <p class="guide-eyebrow">提交当天再次核对</p>
+          <h2 id="sources-title">官方来源与技术基线</h2>
+          <p class="guide-baseline">
+            <strong>字段技术基线：</strong>ENISA SRP FAQ Q16（2026-08-03）。Workbench 按版本化配置生成材料，
+            但官方字段、帮助文本、入口和状态仍可能变化；真实提交以当日官方页面为准。
+          </p>
+          <ul class="guide-source-list">
+            <li><a href="https://eur-lex.europa.eu/eli/reg/2024/2847/oj/eng" target="_blank" rel="noopener noreferrer">Regulation (EU) 2024/2847（CRA）</a></li>
+            <li><a href="https://www.enisa.europa.eu/topics/product-security/single-reporting-platform-srp" target="_blank" rel="noopener noreferrer">ENISA SRP 主题页</a></li>
+            <li><a href="https://www.enisa.europa.eu/topics/product-security/single-reporting-platform-srp/frequently-asked-questions" target="_blank" rel="noopener noreferrer">ENISA SRP FAQ</a></li>
+            <li><a href="https://www.enisa.europa.eu/topics/product-security/single-reporting-platform-srp/cra-srp-guidance-ar-user-registration" target="_blank" rel="noopener noreferrer">Assigned Representative 注册指引</a></li>
+            <li><a href="https://www.enisa.europa.eu/topics/product-security/single-reporting-platform-srp/cra-srp-guidance-ar-notification-submission-and-update" target="_blank" rel="noopener noreferrer">Notification 提交与更新指引</a></li>
+            <li><a href="https://eur-lex.europa.eu/eli/reg_del/2026/881/oj/eng" target="_blank" rel="noopener noreferrer">Delegated Regulation (EU) 2026/881（延迟分发条件）</a></li>
+          </ul>
+        </div>
+      </section>
+
+      <footer class="guide-footer">
+        <p>
+          本页是操作辅助，不是法律意见、官方表单、主管机关批准、符合性结论或提交证明。
+          授权人员应依据产品事实、当前法规和实时官方门户作出最终决定。
+        </p>
+        <a class="icon-text-button primary" href="/">返回 EUVD Workbench</a>
+      </footer>
+    </main>
+  </body>
+</html>

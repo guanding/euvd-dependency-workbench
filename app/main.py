@@ -133,6 +133,7 @@ async def add_security_headers(request: Request, call_next: Any) -> Any:
         "/",
         "/index.html",
         "/app.js",
+        "/srp-guide.html",
         "/styles.css",
     }:
         response.headers["Cache-Control"] = "no-store"
