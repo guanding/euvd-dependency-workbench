@@ -23,8 +23,18 @@ TEMPLATE_PATH = (
 
 
 class Pro03bTemplateTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._template_directory = tempfile.TemporaryDirectory()
+        cls.generated_template = Path(cls._template_directory.name) / "blank-template.xlsx"
+        write_template(cls.generated_template)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._template_directory.cleanup()
+
     def test_blank_customer_template_selects_sbom_sheet_and_maps_fields(self) -> None:
-        parsed = read_sbom(TEMPLATE_PATH)
+        parsed = read_sbom(self.generated_template)
 
         self.assertEqual(parsed["sheet"], "02_SBOM_Software")
         self.assertEqual(parsed["header_row"], 1)
@@ -108,20 +118,34 @@ class Pro03bTemplateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "copied-template.xlsx"
             write_template(target)
-            self.assertEqual(
-                hashlib.sha256(target.read_bytes()).hexdigest(),
-                hashlib.sha256(TEMPLATE_PATH.read_bytes()).hexdigest(),
-            )
+            if TEMPLATE_PATH.is_file():
+                self.assertEqual(
+                    hashlib.sha256(target.read_bytes()).hexdigest(),
+                    hashlib.sha256(TEMPLATE_PATH.read_bytes()).hexdigest(),
+                )
+            else:
+                self.assertEqual(read_sbom(target)["sheet"], "02_SBOM_Software")
 
     def test_template_endpoint_uses_packaged_asset_not_stale_output_cache(self) -> None:
         response = asyncio.run(main.download_template())
-        self.assertEqual(Path(response.path), TEMPLATE_PATH)
-        self.assertIn("PRO-03B_v1.4", response.headers["content-disposition"])
+        if TEMPLATE_PATH.is_file():
+            self.assertEqual(Path(response.path), TEMPLATE_PATH)
+            self.assertIn("PRO-03B_v1.4", response.headers["content-disposition"])
+        else:
+            self.assertIn("sbom-import-template.xlsx", response.headers["content-disposition"])
+            self.assertGreater(len(response.body), 1000)
+
+    def test_template_endpoint_generates_public_fallback_when_asset_is_absent(self) -> None:
+        missing = Path(self._template_directory.name) / "rights-pending-asset.xlsx"
+        with patch.object(main, "SBOM_TEMPLATE_PATH", missing):
+            response = asyncio.run(main.download_template())
+        self.assertIn("sbom-import-template.xlsx", response.headers["content-disposition"])
+        self.assertGreater(len(response.body), 1000)
 
     def test_xlsx_upload_does_not_claim_pre7_item_level_observations(self) -> None:
         upload = UploadFile(
-            filename=TEMPLATE_PATH.name,
-            file=io.BytesIO(TEMPLATE_PATH.read_bytes()),
+            filename=self.generated_template.name,
+            file=io.BytesIO(self.generated_template.read_bytes()),
         )
         with tempfile.TemporaryDirectory() as directory:
             upload_dir = Path(directory)

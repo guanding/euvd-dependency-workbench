@@ -1,0 +1,232 @@
+name: Security and supply-chain checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "23 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+
+jobs:
+  source-secret-guard:
+    name: High-confidence source secret guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scan tracked text files
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          import subprocess
+
+          patterns = {
+              "private-key header": re.compile("-----" + r"BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----"),
+              "AWS access key": re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+              "GitHub token": re.compile(r"\bgh" + r"[pousr]_[A-Za-z0-9]{30,}\b"),
+              "GitHub fine-grained token": re.compile(r"\bgithub" + r"_pat_[A-Za-z0-9_]{60,}\b"),
+              "OpenAI-style token": re.compile(r"\bsk" + r"-[A-Za-z0-9]{32,}\b"),
+          }
+          tracked = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\0")
+          findings = []
+          for relative in filter(None, tracked):
+              path = Path(relative)
+              if path.is_symlink():
+                  findings.append(f"{relative}: tracked symlink requires explicit review")
+                  continue
+              data = path.read_bytes()
+              if b"\0" in data[:8192]:
+                  continue
+              text = data.decode("utf-8", errors="ignore")
+              for line_number, line in enumerate(text.splitlines(), 1):
+                  for label, pattern in patterns.items():
+                      if pattern.search(line):
+                          findings.append(f"{relative}:{line_number}: {label}")
+          if findings:
+              raise SystemExit("Potential secrets detected:\n" + "\n".join(findings))
+          print("No configured high-confidence pattern matched tracked text files.")
+          PY
+      - name: State scanner boundary
+        run: >-
+          echo "::notice::This lightweight guard is not a substitute for an approved
+          full-history and binary secret scanner required by PUBLIC_RELEASE_CHECKLIST.md."
+
+  dependency-and-license-inventory:
+    name: Dependency audit and metadata inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock
+            requirements-dev.lock
+      - name: Install runtime dependencies and auditor
+        run: |
+          python -m pip install --require-hashes --requirement requirements.lock
+          python -m venv "${RUNNER_TEMP}/ci-tools"
+          "${RUNNER_TEMP}/ci-tools/bin/python" -m pip install \
+            --require-hashes --requirement requirements-dev.lock
+      - name: Audit declared runtime dependencies
+        run: >-
+          "${RUNNER_TEMP}/ci-tools/bin/python" -m pip_audit --strict
+          --require-hashes --requirement requirements.lock
+      - name: Export dependency license metadata for human review
+        env:
+          REPORT_PATH: ${{ runner.temp }}/third-party-metadata.json
+        run: |
+          python - <<'PY'
+          from importlib.metadata import distributions
+          from pathlib import Path
+          import json
+          import os
+
+          rows = []
+          for distribution in distributions():
+              metadata = distribution.metadata
+              classifiers = [
+                  item for item in metadata.get_all("Classifier", [])
+                  if item.startswith("License ::")
+              ]
+              rows.append({
+                  "name": metadata.get("Name") or distribution.name,
+                  "version": distribution.version,
+                  "license_expression": metadata.get("License-Expression") or "",
+                  "license_field": metadata.get("License") or "",
+                  "license_classifiers": classifiers,
+              })
+          rows.sort(key=lambda item: item["name"].casefold())
+          Path(os.environ["REPORT_PATH"]).write_text(
+              json.dumps(rows, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          missing = [row["name"] for row in rows if not any((
+              row["license_expression"], row["license_field"], row["license_classifiers"]
+          ))]
+          if missing:
+              print("::warning::Missing license metadata: " + ", ".join(missing))
+          print("Metadata inventory is not a license compatibility or redistribution approval.")
+          PY
+      - name: Upload dependency metadata
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dependency-license-metadata
+          path: ${{ runner.temp }}/third-party-metadata.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Enforce current public-release boundary
+        run: |
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+
+          expected_hash = "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+          actual_hash = hashlib.sha256(Path("LICENSE").read_bytes()).hexdigest()
+          if actual_hash != expected_hash:
+              raise SystemExit("LICENSE is not the canonical Apache-2.0 text")
+          notice = Path("NOTICE").read_text(encoding="utf-8").splitlines()
+          if "Copyright 2026 Ding Guan" not in notice:
+              raise SystemExit("NOTICE copyright does not match the approved rightsholder")
+          print("Project license and copyright notice are consistent.")
+          PY
+
+  container-sbom:
+    name: Container build and candidate SBOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build image
+        run: docker build --tag euvd-dependency-workbench:security .
+      - name: Verify project license bundle in image
+        run: >-
+          docker run --rm --entrypoint /usr/bin/python
+          euvd-dependency-workbench:security -c
+          "import hashlib; from pathlib import Path; root = Path('/app/licenses');
+          assert hashlib.sha256((root / 'LICENSE').read_bytes()).hexdigest() ==
+          'cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30';
+          assert 'Copyright 2026 Ding Guan' in
+          (root / 'NOTICE').read_text(encoding='utf-8').splitlines();
+          assert (root / 'THIRD_PARTY_NOTICES.md').is_file()"
+      - name: Generate candidate CycloneDX SBOM with pinned Syft image
+        run: |
+          mkdir -p "${{ runner.temp }}/container-reports"
+          docker save \
+            --output "${{ runner.temp }}/container-reports/image.tar" \
+            euvd-dependency-workbench:security
+          docker run --rm \
+            --volume "${{ runner.temp }}/container-reports:/scan:ro" \
+            anchore/syft:v1.50.0@sha256:1288ea4c8b38767b4e620c1e312c8cb26b6e887a99b4f07ab6cd19fc6f225026 \
+            docker-archive:/scan/image.tar \
+            --output cyclonedx-json \
+            > "${{ runner.temp }}/container-reports/image.cdx.json"
+      - name: Verify image Python graph matches the Linux lock projection
+        env:
+          IMAGE_SBOM: ${{ runner.temp }}/container-reports/image.cdx.json
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          components = json.loads(Path(os.environ["IMAGE_SBOM"]).read_text(encoding="utf-8"))["components"]
+          actual = {
+              (item["name"].lower().replace("_", "-"), item.get("version"))
+              for item in components
+              if (item.get("purl") or "").startswith("pkg:pypi/")
+          }
+          headers = [
+              line for line in Path("requirements.lock").read_text(encoding="utf-8").splitlines()
+              if line and not line[0].isspace() and not line.startswith("#") and "==" in line
+          ]
+          expected = {
+              (line.split("==", 1)[0].lower().replace("_", "-"), line.split("==", 1)[1].split()[0])
+              for line in headers
+              if "sys_platform == 'win32'" not in line
+          }
+          if actual != expected:
+              raise SystemExit(
+                  "Image/lock mismatch: missing=" + repr(sorted(expected - actual))
+                  + " extra=" + repr(sorted(actual - expected))
+              )
+          print(f"Image Python graph matches requirements.lock: {len(actual)} packages.")
+          PY
+      - name: Upload candidate SBOM
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: candidate-container-sbom
+          path: ${{ runner.temp }}/container-reports/image.cdx.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: State container-scanning boundary
+        run: >-
+          echo "::warning::No locally verified digest for a container vulnerability
+          scanner was available when this workflow was authored. A reviewed, pinned
+          scanner and a zero-unwaived-critical/high policy remain public-release blockers."

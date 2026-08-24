@@ -1,5 +1,9 @@
 # EUVD Dependency Workbench v2.3.1 开发交接说明
 
+> 历史快照：本文保留 v2.3.1 当时的本机路径、镜像和测试记录，仅用于追溯。
+> 当前候选为 `2.4.0-rc.1`，以 `RELEASE_CANDIDATE_2.4.0-rc.1.md` 为准；本文
+> 不能证明当前版本、公开发布、客户交付或符合性。
+
 文档日期：2026-08-04  
 交接对象：后续维护、测试和扩展本项目的人类程序员  
 当前版本：`v2.3.1` Docker 本机候选  
@@ -42,7 +46,7 @@ awareness 时间和 SRP 分阶段草稿，但不会自动作出法律结论，�
 ### 2.1 Web 工作台
 
 ```text
-/Users/mac/Documents/AI-Cybersecurity/CRA/解读文件/SBOM工具/euvd-sbom-matcher
+/Users/mac/Documents/AI-Cybersecurity/euvd-sbom-matcher
 ```
 
 职责：
@@ -77,8 +81,8 @@ awareness 时间和 SRP 分阶段草稿，但不会自动作出法律结论，�
 ### 2.3 Web 使用的只读消费者快照
 
 ```text
-/Users/mac/Documents/AI-Cybersecurity/CRA/解读文件/SBOM工具/euvd-sbom-matcher/data/euvd-readonly.sqlite3
-/Users/mac/Documents/AI-Cybersecurity/CRA/解读文件/SBOM工具/euvd-sbom-matcher/data/euvd-readonly.sqlite3.sha256
+/Users/mac/Documents/AI-Cybersecurity/euvd-sbom-matcher/data/euvd-readonly.sqlite3
+/Users/mac/Documents/AI-Cybersecurity/euvd-sbom-matcher/data/euvd-readonly.sqlite3.sha256
 ```
 
 Web 工作台不得直接写正式镜像。正确链路是：
@@ -489,7 +493,7 @@ Web 侧一致性备份示例：
 
 ```bash
 set -e
-cd '/Users/mac/Documents/AI-Cybersecurity/CRA/解读文件/SBOM工具/euvd-sbom-matcher'
+cd '/Users/mac/Documents/AI-Cybersecurity/euvd-sbom-matcher'
 docker compose stop matcher
 test -s data/workbench.sqlite3
 test "$(sqlite3 data/workbench.sqlite3 "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('sbom_snapshots','cases','audit_events','feed_snapshots');")" = "4"
@@ -535,7 +539,7 @@ shasum -a 256 "$mirror_backup_dir/euvd-mirror.sqlite3" > "$mirror_backup_dir/SHA
 ### 8.2 启动和停止
 
 ```bash
-cd '/Users/mac/Documents/AI-Cybersecurity/CRA/解读文件/SBOM工具/euvd-sbom-matcher'
+cd '/Users/mac/Documents/AI-Cybersecurity/euvd-sbom-matcher'
 docker compose up -d --build
 docker compose ps
 curl -fsS http://127.0.0.1:8090/api/health
@@ -689,7 +693,7 @@ sqlite3 data/euvd-mirror.sqlite3 'PRAGMA integrity_check;'
 快照恢复点，再生成唯一运行证据：
 
 ```bash
-cd '/Users/mac/Documents/AI-Cybersecurity/CRA/解读文件/SBOM工具/euvd-sbom-matcher'
+cd '/Users/mac/Documents/AI-Cybersecurity/euvd-sbom-matcher'
 snapshot_run_id="$(date -u +%Y%m%dT%H%M%SZ)-$(uuidgen | tr '[:upper:]' '[:lower:]')"
 snapshot_backup_dir="$PWD/backups/euvd-snapshot-$snapshot_run_id"
 test ! -e "$snapshot_backup_dir"
@@ -747,7 +751,7 @@ HTTP 403、429、5xx 或分页中断时不得手工推进高水位，也不得�
 ### 10.1 Web 自动化
 
 ```bash
-cd '/Users/mac/Documents/AI-Cybersecurity/CRA/解读文件/SBOM工具/euvd-sbom-matcher'
+cd '/Users/mac/Documents/AI-Cybersecurity/euvd-sbom-matcher'
 handoff_test_root=$(mktemp -d)
 DATA_DIR="$handoff_test_root/data" \
 OUTPUT_DIR="$handoff_test_root/outputs" \
@@ -786,7 +790,7 @@ cd /Users/mac/EUVD-Local-Mirror
 新的输出目录，不得写回历史 UUID 目录：
 
 ```bash
-cd '/Users/mac/Documents/AI-Cybersecurity/CRA/解读文件/SBOM工具/euvd-sbom-matcher'
+cd '/Users/mac/Documents/AI-Cybersecurity/euvd-sbom-matcher'
 demo_run_id="$(date -u +%Y%m%dT%H%M%SZ)-$(uuidgen | tr '[:upper:]' '[:lower:]')"
 /Users/mac/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node \
   scripts/demo_template_roundtrip.mjs \
@@ -798,7 +802,7 @@ demo_run_id="$(date -u +%Y%m%dT%H%M%SZ)-$(uuidgen | tr '[:upper:]' '[:lower:]')"
 避免复制近 1 GB 数据；如果当前文件系统不支持 `cp -c`，改用普通 `cp` 并预留空间：
 
 ```bash
-cd '/Users/mac/Documents/AI-Cybersecurity/CRA/解读文件/SBOM工具/euvd-sbom-matcher'
+cd '/Users/mac/Documents/AI-Cybersecurity/euvd-sbom-matcher'
 demo_root=$(mktemp -d)
 demo_project="euvd-handoff-demo-$(date -u +%Y%m%dt%H%M%Sz)"
 mkdir -p "$demo_root/data" "$demo_root/outputs"

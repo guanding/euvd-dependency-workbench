@@ -4,57 +4,43 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$driveRoot = [System.IO.Path]::GetPathRoot($Root)
-if ($driveRoot -ne 'F:\') {
-    throw "Portable export must run from F:\. Current path: $Root"
+if ($WithData) {
+    throw '-WithData is disabled: public portable exports must never contain customer data, EUVD databases, reports, backups, or runtime state.'
+}
+
+$RuntimePython = Join-Path $Root 'runtime\python.exe'
+if (Test-Path -LiteralPath $RuntimePython) {
+    $PythonCommand = $RuntimePython
+    $PythonPrefixArgs = @()
+} else {
+    $PythonInfo = Get-Command python.exe, python -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $PythonInfo) {
+        throw 'Python is required to stage the allowlisted portable source. Run scripts\setup-runtime.ps1 or install Python 3.'
+    }
+    $PythonCommand = $PythonInfo.Source
+    $PythonPrefixArgs = @()
 }
 
 $exportDir = Join-Path $Root 'exports'
 New-Item -ItemType Directory -Force -Path $exportDir | Out-Null
 
-$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
 $stageDir = Join-Path $Root ".export-stage-$timestamp"
 $stageRoot = Join-Path $stageDir 'euvd-sbom-matcher'
-New-Item -ItemType Directory -Force -Path $stageRoot | Out-Null
+New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
 
 try {
-    $exclude = @('exports', '.artifact-work', 'runtime-install', '__pycache__')
-    if (-not $WithData) {
-        $exclude += @('data', 'outputs')
+    & $PythonCommand @PythonPrefixArgs (Join-Path $PSScriptRoot 'build_portable_candidate.py') --output $stageRoot
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Allowlisted portable staging failed.'
     }
 
-    Get-ChildItem -LiteralPath $Root -Force | Where-Object {
-        $_.Name -notin $exclude -and $_.Name -notlike '.export-stage-*'
-    } | ForEach-Object {
-        Copy-Item -LiteralPath $_.FullName -Destination $stageRoot -Recurse -Force
-    }
-
-    New-Item -ItemType Directory -Force -Path (Join-Path $stageRoot 'data'), (Join-Path $stageRoot 'outputs') | Out-Null
-    if ($WithData) {
-        $sourceDb = Join-Path $Root 'data\workbench.sqlite3'
-        $stagedDb = Join-Path $stageRoot 'data\workbench.sqlite3'
-        if (Test-Path -LiteralPath $sourceDb) {
-            if (-not (Test-Path -LiteralPath $RuntimePython)) {
-                throw 'Portable Python runtime is required for a consistent SQLite backup.'
-            }
-            Remove-Item -LiteralPath $stagedDb -Force -ErrorAction SilentlyContinue
-            & $RuntimePython -c 'import sqlite3,sys; source=sqlite3.connect(sys.argv[1]); target=sqlite3.connect(sys.argv[2]); source.backup(target); target.close(); source.close()' $sourceDb $stagedDb
-            if ($LASTEXITCODE -ne 0) {
-                throw 'SQLite online backup failed.'
-            }
-            Remove-Item -LiteralPath "$stagedDb-wal", "$stagedDb-shm" -Force -ErrorAction SilentlyContinue
-        }
-    }
     $zipName = "euvd-sbom-matcher-portable-$timestamp.zip"
     $zipPath = Join-Path $exportDir $zipName
     Compress-Archive -LiteralPath $stageRoot -DestinationPath $zipPath -CompressionLevel Optimal
 
     Write-Host "Portable package created: $zipPath"
-    if ($WithData) {
-        Write-Host 'The package includes cache, uploads, jobs, and generated reports.'
-    } else {
-        Write-Host 'The package contains the application only. Local customer data was excluded.'
-    }
+    Write-Host 'Data-free allowlist enforced: no .git, data, backups, self-test, runtime, outputs, exports, .serena, or rights-pending binary assets.'
 } finally {
     if (Test-Path -LiteralPath $stageDir) {
         $resolvedStage = (Resolve-Path -LiteralPath $stageDir).Path

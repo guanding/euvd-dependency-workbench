@@ -5,10 +5,18 @@ $RuntimePython = Join-Path $RuntimeDir 'python.exe'
 $ReadyMarker = Join-Path $RuntimeDir 'READY'
 $PythonVersion = '3.13.14'
 $PythonSha256 = '90b4e5b9898b72d744650524bff92377c367f44bd5fbd09e3148656c080ad907'
+$PipVersion = '26.2.1'
+$PipZipAppSha256 = '91d5fd9f6f25549fd839c60536c6f1b945316ce3588d34a605635b6071c91526'
+$RequirementsLock = Join-Path $Root 'requirements.lock'
+$RequirementsLockSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $RequirementsLock).Hash.ToLowerInvariant()
 
 if ((Test-Path $RuntimePython) -and (Test-Path $ReadyMarker)) {
-    & $RuntimePython -c 'import fastapi, httpx, openpyxl, packaging, multipart, uvicorn'
-    if ($LASTEXITCODE -eq 0) {
+    $readyLines = Get-Content -LiteralPath $ReadyMarker
+    $readyMatches = `
+        ($readyLines -contains "Python $PythonVersion") -and `
+        ($readyLines -contains "Requirements-Lock-SHA256 $RequirementsLockSha256")
+    & $RuntimePython -c 'import charset_normalizer, fastapi, httpx, openpyxl, packaging, multipart, uvicorn'
+    if ($readyMatches -and ($LASTEXITCODE -eq 0)) {
         Write-Host 'Portable runtime is ready.'
         exit 0
     }
@@ -17,7 +25,7 @@ if ((Test-Path $RuntimePython) -and (Test-Path $ReadyMarker)) {
 $stageDir = Join-Path $Root 'runtime-install'
 $stagePython = Join-Path $stageDir 'python'
 $archivePath = Join-Path $stageDir "python-$PythonVersion-embed-amd64.zip"
-$getPipPath = Join-Path $stageDir 'get-pip.py'
+$pipZipAppPath = Join-Path $stageDir "pip-$PipVersion.pyz"
 
 if (Test-Path $stageDir) {
     $resolvedStage = (Resolve-Path $stageDir).Path
@@ -49,28 +57,30 @@ try {
     [System.IO.File]::WriteAllLines($pthPath.FullName, $pthContent, [System.Text.UTF8Encoding]::new($false))
 
     Write-Host 'Installing application dependencies...'
-    Invoke-WebRequest -Uri 'https://bootstrap.pypa.io/get-pip.py' -OutFile $getPipPath -UseBasicParsing
-    & (Join-Path $stagePython 'python.exe') $getPipPath --no-warn-script-location
-    if ($LASTEXITCODE -ne 0) {
-        throw 'pip bootstrap failed.'
+    $pipZipAppUrl = "https://bootstrap.pypa.io/pip/zipapp/pip-$PipVersion.pyz"
+    Invoke-WebRequest -Uri $pipZipAppUrl -OutFile $pipZipAppPath -UseBasicParsing
+    $actualPipHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $pipZipAppPath).Hash.ToLowerInvariant()
+    if ($actualPipHash -ne $PipZipAppSha256) {
+        throw "pip zipapp checksum mismatch. Expected $PipZipAppSha256, got $actualPipHash."
     }
 
-    & (Join-Path $stagePython 'python.exe') -m pip install `
+    & (Join-Path $stagePython 'python.exe') $pipZipAppPath install `
         --disable-pip-version-check `
         --no-warn-script-location `
-        -r (Join-Path $Root 'requirements.txt')
+        --require-hashes `
+        -r $RequirementsLock
     if ($LASTEXITCODE -ne 0) {
         throw 'Application dependency installation failed.'
     }
 
-    & (Join-Path $stagePython 'python.exe') -c 'import fastapi, httpx, openpyxl, packaging, multipart, uvicorn'
+    & (Join-Path $stagePython 'python.exe') -c 'import charset_normalizer, fastapi, httpx, openpyxl, packaging, multipart, uvicorn'
     if ($LASTEXITCODE -ne 0) {
         throw 'Portable runtime verification failed.'
     }
 
     [System.IO.File]::WriteAllText(
         (Join-Path $stagePython 'READY'),
-        "Python $PythonVersion`r`n",
+        "Python $PythonVersion`r`nRequirements-Lock-SHA256 $RequirementsLockSha256`r`n",
         [System.Text.UTF8Encoding]::new($false)
     )
 

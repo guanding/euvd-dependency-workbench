@@ -1,0 +1,13 @@
+# Routing owner derived from the current repository history. The repository
+# administrator must verify this account has access before enabling protection.
+# A single CODEOWNER is not four-eye release approval; add a second independent
+# named reviewer before any public release.
+* @guanding
+/.github/ @guanding
+/app/ @guanding
+/scripts/ @guanding
+/release/ @guanding
+/Dockerfile @guanding
+/docker-compose.yml @guanding
+/THIRD_PARTY_NOTICES.md @guanding
+/PUBLIC_RELEASE_CHECKLIST.md @guanding

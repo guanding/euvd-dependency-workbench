@@ -166,6 +166,12 @@ class ParsingEvidenceP2RemainingTests(unittest.TestCase):
         text = spreadsheet_io._decode_csv(path)
         self.assertIn("Müller", text)
 
+    def test_decode_csv_gb18030_preserves_chinese_headers(self) -> None:
+        path = self.dir / "gb18030.csv"
+        expected = "组件名称,版本\nopenssl,3.0.0\n"
+        path.write_bytes(expected.encode("gb18030"))
+        self.assertEqual(spreadsheet_io._decode_csv(path), expected)
+
     def test_read_xlsx_prefers_populated_sheet_over_empty_template(self) -> None:
         wb = Workbook()
         empty = wb.active

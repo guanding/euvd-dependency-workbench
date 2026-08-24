@@ -149,7 +149,7 @@ class EvidencePayloadBuilderTests(unittest.TestCase):
 
     def test_project_identity_and_summary(self) -> None:
         payload = build_evidence_package_payload(self._job(), self.store, self.uploads)
-        self.assertEqual(payload["schema_version"], "1.0")
+        self.assertEqual(payload["schema_version"], "1.1")
         self.assertEqual(payload["project_identity"]["project_name"], "Gateway")
         self.assertEqual(payload["summary"]["component_count"], 2)
 
@@ -187,6 +187,8 @@ class EvidencePayloadBuilderTests(unittest.TestCase):
         payload = build_evidence_package_payload(self._job(), self.store, self.uploads)
         self.assertEqual(payload["cra_reportable_judgments"], [])
         self.assertIn("Art.14", payload["disclaimer"])
+        self.assertIn("不构成法规符合性", payload["disclaimer"])
+        self.assertIn("不是外部签名", payload["disclaimer"])
 
     def test_unmatched_components_derived(self) -> None:
         components = [

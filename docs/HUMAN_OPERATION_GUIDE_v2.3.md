@@ -1,5 +1,9 @@
 # EUVD Dependency Workbench v2.3 人工操作指南
 
+> 历史操作快照：其中的本机绝对路径和 v2.3 镜像命令不具备可移植性，也不适用
+> 于当前 `2.4.0-rc.1` 公开候选。当前 clean-clone、Mirror、VEX 与 portable
+> 边界见 `RELEASE_CANDIDATE_2.4.0-rc.1.md`。
+
 适用对象：在本机使用 Docker Desktop 的 SBOM 分析人员。本文只描述内部调查和
 CRA Article 14 报告准备；不授权自动符合性判定、自动 SRP 提交或产品发布。
 
@@ -9,7 +13,7 @@ CRA Article 14 报告准备；不授权自动符合性判定、自动 SRP 提交
 2. 打开“终端”，逐行运行：
 
    ```bash
-   cd '/Users/mac/Documents/AI-Cybersecurity/CRA/解读文件/SBOM工具/euvd-sbom-matcher'
+   cd '/Users/mac/Documents/AI-Cybersecurity/euvd-sbom-matcher'
    docker compose up -d
    docker compose ps
    ```
@@ -147,7 +151,7 @@ v2.3 增加了独立 Syft sidecar。它默认断网、只读挂载输入、不�
 每次使用新的 `identity` 和输出目录；工具会拒绝覆盖旧证据：
 
 ```bash
-cd '/Users/mac/Documents/AI-Cybersecurity/CRA/解读文件/SBOM工具/euvd-sbom-matcher'
+cd '/Users/mac/Documents/AI-Cybersecurity/euvd-sbom-matcher'
 python3 scripts/generate_sbom.py \
   --kind source \
   --input . \
@@ -225,7 +229,7 @@ docker compose run --rm euvd-sync reference-data \
 确认正式镜像的同步结果和 `integrity_check=ok` 后：
 
 ```bash
-cd '/Users/mac/Documents/AI-Cybersecurity/CRA/解读文件/SBOM工具/euvd-sbom-matcher'
+cd '/Users/mac/Documents/AI-Cybersecurity/euvd-sbom-matcher'
 python3 scripts/build_local_euvd_snapshot.py \
   --source /Users/mac/EUVD-Local-Mirror/data/euvd-mirror.sqlite3 \
   --output data/euvd-readonly.sqlite3 \

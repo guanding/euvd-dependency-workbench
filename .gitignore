@@ -8,6 +8,9 @@ runtime/
 samples/
 experiments/
 logs/
+exports/
+runtime-install/
+.export-stage-*/
 
 # === 数据库文件 ===
 *.sqlite3
@@ -22,6 +25,7 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+.ci-tools/
 .pytest_cache/
 .mypy_cache/
 
@@ -29,6 +33,7 @@ venv/
 .DS_Store
 .vscode/
 .idea/
+.serena/
 *.swp
 *.swo
 *~

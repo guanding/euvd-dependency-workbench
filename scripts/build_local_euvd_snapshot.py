@@ -16,6 +16,7 @@ import re
 import sqlite3
 import time
 import unicodedata
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
@@ -180,12 +181,14 @@ def _build_snapshot(source: Path, output: Path, temporary: Path) -> dict[str, An
     )
 
     source_uri = f"file:{source.as_posix()}?mode=ro"
-    with sqlite3.connect(source_uri, uri=True, timeout=60) as source_db:
+    with closing(
+        sqlite3.connect(source_uri, uri=True, timeout=60)
+    ) as source_db, source_db:
         source_db.execute("PRAGMA query_only=ON")
         source_integrity = scalar(source_db, "PRAGMA integrity_check")
         if source_integrity != "ok":
             raise ValueError(f"source database integrity_check={source_integrity}")
-        with sqlite3.connect(temporary, timeout=60) as target_db:
+        with closing(sqlite3.connect(temporary, timeout=60)) as target_db, target_db:
             source_db.backup(target_db, pages=4096, sleep=0.05)
 
     source_state_after = file_state(source)
@@ -211,7 +214,7 @@ def _build_snapshot(source: Path, output: Path, temporary: Path) -> dict[str, An
     source_logical_snapshot_sha256 = sha256_file(temporary)
     inserted_products = 0
     invalid_records = 0
-    with sqlite3.connect(temporary, timeout=60) as database:
+    with closing(sqlite3.connect(temporary, timeout=60)) as database, database:
         database.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         journal_mode = str(scalar(database, "PRAGMA journal_mode=DELETE") or "")
         if journal_mode.casefold() != "delete":

@@ -15,7 +15,6 @@ import unittest
 
 from app import main
 from app.vex_intake import (
-    VEX_FORMAT_CYCLONEDX,
     VEX_INTAKE_SCHEMA_VERSION,
     VexIntakeError,
     parse_vex_document,

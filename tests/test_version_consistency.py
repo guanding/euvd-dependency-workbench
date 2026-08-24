@@ -1,13 +1,21 @@
-"""版本号单一源一致性测试（D0，架构审查中危：版本号散落致 v2.3.0/v2.3.1 漂移）。
+"""版本号单一源一致性测试（防止应用版本与镜像标签漂移）。
 
-APP_VERSION (app/main.py) 是版本号唯一权威。本测试在 CI 中强制 docker-compose
+APP_VERSION (app/version.py) 是版本号唯一权威。本测试在 CI 中强制 docker-compose
 镜像 tag 与之一致；若有人改 APP_VERSION 但忘了同步 docker-compose tag，本测试
 失败。运行 `python scripts/check_version_consistency.py` 可人工核查（含 /api/health）。
 """
 
+import hashlib
 import importlib.util
+import json
+import re
+import shutil
+import tempfile
 import unittest
 from pathlib import Path
+
+from app.version import APP_VERSION, USER_AGENT
+from release.build_public_candidate import _license_gate
 
 _SCRIPT = (
     Path(__file__).resolve().parent.parent / "scripts" / "check_version_consistency.py"
@@ -39,6 +47,129 @@ class VersionConsistencyTests(unittest.TestCase):
             r"^\d+\.\d+\.\d+",
             f"APP_VERSION '{v}' 不像语义化版本 x.y.z",
         )
+
+    def test_release_candidate_version_and_license_are_expected(self):
+        self.assertEqual(_mod.app_version(), "2.4.0-rc.1")
+        root = Path(__file__).resolve().parents[1]
+        self.assertEqual(
+            hashlib.sha256((root / "LICENSE").read_bytes()).hexdigest(),
+            "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+        )
+        self.assertIn(
+            "Copyright 2026 Ding Guan",
+            (root / "NOTICE").read_text(encoding="utf-8").splitlines(),
+        )
+        review = json.loads((root / "release" / "rights_review.json").read_text(encoding="utf-8"))
+        project = next(item for item in review["items"] if item["id"] == "project-source-code")
+        self.assertEqual(project["status"], "APPROVED")
+        self.assertEqual(project["license_expression"], "Apache-2.0")
+        self.assertEqual(project["copyright_holder"], "Ding Guan")
+        declaration = review["project_content_declaration"]
+        self.assertEqual(declaration["declarant"], "Ding Guan")
+        self.assertEqual(declaration["status"], "AUTHOR_DECLARED")
+        for item_id in ("product-alias-registry", "public-cve-test-fixture"):
+            item = next(item for item in review["items"] if item["id"] == item_id)
+            self.assertEqual(item["status"], "APPROVED")
+            self.assertEqual(item["license_expression"], "Apache-2.0")
+            self.assertEqual(item["copyright_holder"], "Ding Guan")
+        with tempfile.TemporaryDirectory() as directory_name:
+            candidate = Path(directory_name)
+            shutil.copy2(root / "LICENSE", candidate / "LICENSE")
+            shutil.copy2(root / "NOTICE", candidate / "NOTICE")
+            self.assertEqual(_license_gate(candidate), (True, None))
+            (candidate / "LICENSE").write_text("tampered\n", encoding="utf-8")
+            self.assertEqual(
+                _license_gate(candidate),
+                (False, "LICENSE_CONTENT_MISMATCH"),
+            )
+
+    def test_protocol_user_agent_uses_authoritative_version(self):
+        self.assertEqual(USER_AGENT, f"EUVD-Dependency-Workbench/{APP_VERSION}")
+
+    def test_container_distributes_project_license_and_notices(self):
+        root = Path(__file__).resolve().parents[1]
+        dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
+        self.assertIn(
+            "COPY --chown=65532:65532 LICENSE NOTICE "
+            "THIRD_PARTY_NOTICES.md ./licenses/",
+            dockerfile,
+        )
+
+    def test_csv_detector_is_a_pinned_runtime_dependency(self):
+        root = Path(__file__).resolve().parents[1]
+        requirements = (root / "requirements.txt").read_text(encoding="utf-8")
+        self.assertIn("charset-normalizer==3.4.9", requirements.splitlines())
+
+    def test_container_sbom_scan_does_not_mount_docker_socket(self):
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github" / "workflows" / "security.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("/var/run/docker.sock", workflow)
+        self.assertIn("docker-archive:/scan/image.tar", workflow)
+        self.assertIn("Image Python graph matches requirements.lock", workflow)
+
+    def test_runtime_lock_covers_direct_pins_and_records_hashes(self):
+        root = Path(__file__).resolve().parents[1]
+        direct_lines = [
+            line.strip()
+            for line in (root / "requirements.txt").read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+        lock = (root / "requirements.lock").read_text(encoding="utf-8")
+        self.assertNotIn("--index-url", lock)
+        for direct in direct_lines:
+            name, version = direct.split("==", 1)
+            name = name.split("[", 1)[0]
+            self.assertRegex(
+                lock,
+                rf"(?m)^{re.escape(name)}=={re.escape(version)}(?:\s|\\)",
+            )
+        headers = list(
+            re.finditer(r"(?m)^[a-z0-9][a-z0-9_.-]*==[^\n]+", lock)
+        )
+        self.assertGreater(len(headers), len(direct_lines))
+        for index, header in enumerate(headers):
+            end = headers[index + 1].start() if index + 1 < len(headers) else len(lock)
+            self.assertIn("--hash=sha256:", lock[header.start() : end])
+
+    def test_runtime_installers_enforce_hash_lock(self):
+        root = Path(__file__).resolve().parents[1]
+        dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
+        setup = (root / "scripts" / "setup-runtime.ps1").read_text(encoding="utf-8")
+        workflow = (root / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        for text in (dockerfile, setup, workflow):
+            self.assertIn("--require-hashes", text)
+            self.assertIn("requirements.lock", text)
+        self.assertIn("Requirements-Lock-SHA256", setup)
+        self.assertNotIn("get-pip.py", setup)
+        self.assertIn("$PipVersion = '26.2.1'", setup)
+        self.assertIn('"pip-$PipVersion.pyz"', setup)
+        self.assertIn(
+            "91d5fd9f6f25549fd839c60536c6f1b945316ce3588d34a605635b6071c91526",
+            setup,
+        )
+
+    def test_ci_tool_graph_is_hash_locked_and_isolated(self):
+        root = Path(__file__).resolve().parents[1]
+        direct = {
+            line.strip()
+            for line in (root / "requirements-dev.txt").read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        }
+        lock = (root / "requirements-dev.lock").read_text(encoding="utf-8")
+        for requirement in direct:
+            self.assertRegex(lock, rf"(?m)^{re.escape(requirement)}(?:\s|\\)")
+        self.assertIn("--hash=sha256:", lock)
+        for workflow_name in ("ci.yml", "security.yml"):
+            workflow = (
+                root / ".github" / "workflows" / workflow_name
+            ).read_text(encoding="utf-8")
+            self.assertIn("requirements-dev.lock", workflow)
+            self.assertIn("--require-hashes", workflow)
+            self.assertIn("${RUNNER_TEMP}/ci-tools", workflow)
 
 
 if __name__ == "__main__":
