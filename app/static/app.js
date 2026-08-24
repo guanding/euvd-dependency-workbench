@@ -33,28 +33,46 @@ const fields = [
   ["euvd", "EUVD ID", false],
 ];
 
-const srpFields = [
+const commonSrpFields = [
   ["reporter", "Reporter / 提交代表", "text"],
   ["manufacturer_name", "制造商名称 *", "text"],
-  ["manufacturer_contact", "制造商联系方式", "text"],
+  ["manufacturer_contact", "制造商联系方式（本地辅助，非 Q16 门户字段）", "text"],
   ["title", "通知标题 *", "text"],
   ["product_type", "产品类型（Default / Important / Critical）", "text"],
   ["product_category", "产品类别（Important/Critical 时填写）", "text"],
-  ["member_states_where_available", "产品可用成员国", "textarea"],
+  ["member_states_where_available", "产品可用成员国（如信息可用必填）", "textarea"],
+  ["csirt_coordinator", "CSIRT 协调员（本地辅助）", "text"],
+  ["user_notification", "用户通知记录（本地辅助）", "textarea"],
+  ["sensitivity", "信息敏感性", "textarea"],
+];
+
+const vulnerabilitySrpFields = [
   ["general_information", "漏洞一般信息（72h）", "textarea"],
   ["vulnerability_nature", "漏洞一般性质（72h）", "textarea"],
   ["exploit_nature", "利用一般性质（72h）", "textarea"],
   ["corrective_measures_taken", "已采取修正/缓解措施（72h）", "textarea"],
   ["user_measures", "用户可采取措施（72h）", "textarea"],
-  ["sensitivity", "信息敏感性", "textarea"],
   ["full_vulnerability_description", "完整漏洞说明（Final）", "textarea"],
   ["vulnerability_severity", "漏洞严重性（Final）", "text"],
   ["vulnerability_impact", "漏洞影响（Final）", "textarea"],
   ["malicious_actor", "恶意行为者（如已知）", "textarea"],
   ["security_update_details", "安全更新/修正措施详情（Final）", "textarea"],
-  ["csirt_coordinator", "CSIRT 协调员", "text"],
-  ["user_notification", "用户通知记录", "textarea"],
-  ["remediation_monitoring", "修复后监测", "textarea"],
+  ["remediation_monitoring", "修复后监测（本地辅助，非 Q16 门户字段）", "textarea"],
+];
+
+const incidentSrpFields = [
+  ["incident_suspected_unlawful_or_malicious", "疑似非法/恶意原因（yes / no / unknown，24h）", "text"],
+  ["incident_general_nature", "事件一般性质（72h）", "textarea"],
+  ["incident_detected_at", "事件检测日期时间（72h，含时区）", "text"],
+  ["incident_occurred_at", "事件发生日期时间（72h，含时区）", "text"],
+  ["incident_initial_assessment", "事件初步评估（72h）", "textarea"],
+  ["incident_corrective_measures_taken", "已采取修正/缓解措施（72h）", "textarea"],
+  ["incident_user_measures", "用户可采取措施（72h）", "textarea"],
+  ["incident_detailed_description", "事件详细说明（Final）", "textarea"],
+  ["incident_severity", "事件严重性（Final）", "text"],
+  ["incident_impact", "事件影响（Final）", "textarea"],
+  ["incident_likely_threat_or_root_cause", "可能威胁/根因（Final）", "textarea"],
+  ["incident_applied_and_ongoing_mitigation_measures", "已应用及进行中的缓解措施（Final）", "textarea"],
 ];
 
 const elements = {
@@ -82,6 +100,7 @@ const elements = {
   art14NavCount: document.getElementById("art14NavCount"),
   feedSnapshotStatus: document.getElementById("feedSnapshotStatus"),
   refreshFeedsButton: document.getElementById("refreshFeedsButton"),
+  dashboardRefreshEuvdButton: document.getElementById("dashboardRefreshEuvdButton"),
   euvdCatalogSearch: document.getElementById("euvdCatalogSearch"),
   euvdCatalogSort: document.getElementById("euvdCatalogSort"),
   euvdCatalogMeta: document.getElementById("euvdCatalogMeta"),
@@ -97,6 +116,7 @@ const elements = {
   caseDetailTitle: document.getElementById("caseDetailTitle"),
   caseDetailSubtitle: document.getElementById("caseDetailSubtitle"),
   caseDeadlineStrip: document.getElementById("caseDeadlineStrip"),
+  manualCaseType: document.getElementById("manualCaseType"),
   manualProductName: document.getElementById("manualProductName"),
   manualProductVersion: document.getElementById("manualProductVersion"),
   manualComponentName: document.getElementById("manualComponentName"),
@@ -105,6 +125,8 @@ const elements = {
   manualSummary: document.getElementById("manualSummary"),
   createManualCaseButton: document.getElementById("createManualCaseButton"),
   vexFileInput: document.getElementById("vexFileInput"),
+  vexReceiptInput: document.getElementById("vexReceiptInput"),
+  vexIssuerId: document.getElementById("vexIssuerId"),
   vexActor: document.getElementById("vexActor"),
   importVexButton: document.getElementById("importVexButton"),
   vexImportResult: document.getElementById("vexImportResult"),
@@ -118,6 +140,10 @@ const elements = {
   caseApplicabilityReason: document.getElementById("caseApplicabilityReason"),
   caseEvidenceStatus: document.getElementById("caseEvidenceStatus"),
   caseEvidenceSummary: document.getElementById("caseEvidenceSummary"),
+  severeIncidentCriteria: document.getElementById("severeIncidentCriteria"),
+  incidentDataFunctionImpact: document.getElementById("incidentDataFunctionImpact"),
+  incidentMaliciousCode: document.getElementById("incidentMaliciousCode"),
+  incidentCriteriaRationale: document.getElementById("incidentCriteriaRationale"),
   caseRiskSummary: document.getElementById("caseRiskSummary"),
   caseMitigation: document.getElementById("caseMitigation"),
   caseInitialAssessment: document.getElementById("caseInitialAssessment"),
@@ -156,6 +182,11 @@ const elements = {
   saveSrpFieldsButton: document.getElementById("saveSrpFieldsButton"),
   srpReadinessPanel: document.getElementById("srpReadinessPanel"),
   caseExports: document.getElementById("caseExports"),
+  srpPackageStage: document.getElementById("srpPackageStage"),
+  downloadSrpPackageButton: document.getElementById("downloadSrpPackageButton"),
+  srpHumanConfirmation: document.getElementById("srpHumanConfirmation"),
+  openSrpPortalButton: document.getElementById("openSrpPortalButton"),
+  srpPortalStatus: document.getElementById("srpPortalStatus"),
   submissionStage: document.getElementById("submissionStage"),
   submissionReviewer: document.getElementById("submissionReviewer"),
   submissionPin: document.getElementById("submissionPin"),
@@ -862,6 +893,7 @@ async function startMatch() {
 function renderProgress(job) {
   const progress = Number(job.progress || 0);
   elements.progressPanel.classList.toggle("hidden", job.status === "completed");
+  elements.progressPanel.setAttribute("aria-valuenow", String(Math.max(0, Math.min(100, progress))));
   elements.progressStage.textContent = job.stage || "处理中";
   elements.progressPercent.textContent = `${progress}%`;
   elements.progressBar.style.width = `${progress}%`;
@@ -1013,13 +1045,15 @@ function renderSourceDeclarations(job) {
   const status = decl.source_binding_status;
   const provenance =
     status === "DERIVED_FROM_VERIFIED_M3A_ROOT"
-      ? "三面 VERIFIED"
+      ? decl.source_reverification_status === "VERIFIED_AGAINST_M3A_ROOT"
+        ? "三面 VERIFIED"
+        : "Workbench 派生；EUVD 未重验源根"
       : status === "CALLER_DECLARED_NOT_INDEPENDENTLY_VERIFIED"
         ? "单面 DECLARED"
         : status || "";
   elements.declarationChips.innerHTML = [
     chip("分类", decl.classification, "decl-warning"),
-    chip("provenance", provenance, provenance === "三面 VERIFIED" ? "decl-success" : ""),
+    chip("provenance", provenance, provenance === "三面 VERIFIED" ? "decl-success" : "decl-warning"),
     chip("单向契约", decl.direction, ""),
     chip("组件数", decl.component_record_count, ""),
   ].join("");
@@ -1255,7 +1289,7 @@ function nextCaseDeadline(row) {
   if (["early_warning_submitted", "notification_submitted"].includes(stage)) {
     candidate = deadlines.notification_72h;
   }
-  if (stage === "notification_submitted") candidate = deadlines.final_report_14d;
+  if (stage === "notification_submitted") candidate = deadlines.final_report;
   if (stage === "final_submitted") return "已完成三阶段回执";
   if (!candidate?.due_at) return "尚未启动";
   return `${candidate.status === "overdue" ? "已逾期 · " : ""}${formatDate(candidate.due_at)}`;
@@ -1293,8 +1327,8 @@ function renderArt14Cases() {
       .map(
         (row) => `
           <tr>
-            <td><strong>${escapeHtml(row.project_name)}</strong><div class="cell-sub">${escapeHtml(row.project_version || "未标注版本")} · ${escapeHtml(row.cve_id || row.euvd_id || "无公开ID")}</div></td>
-            <td>${escapeHtml(row.public_exploitation_status || "人工信号")}</td>
+            <td><strong>${escapeHtml(row.project_name)}</strong><div class="cell-sub">${escapeHtml(row.case_type === "severe_incident" ? "严重安全事件" : "积极利用漏洞")} · ${escapeHtml(row.project_version || "未标注版本")} · ${escapeHtml(row.cve_id || row.euvd_id || "无公开ID")}</div></td>
+            <td>${escapeHtml(row.case_type === "severe_incident" ? "事件信号" : (row.public_exploitation_status || "人工信号"))}</td>
             <td><span class="status-badge ${caseTone(row.applicability_status)}">${escapeHtml(row.applicability_status)}</span></td>
             <td><span class="status-badge ${caseTone(row.art14_decision)}">${escapeHtml(row.art14_decision)}</span></td>
             <td><span class="status-badge ${caseTone(row.workflow_status)}">${escapeHtml(row.workflow_status)}</span>${row.stale_reason ? `<div class="cell-sub">${escapeHtml(row.stale_reason)}</div>` : ""}</td>
@@ -1323,7 +1357,11 @@ async function openArt14Case(caseId) {
 
 function renderSrpFields(caseItem) {
   const values = caseItem.srp_fields || {};
-  elements.srpFieldsGrid.innerHTML = srpFields
+  const fieldsForCase = [
+    ...commonSrpFields,
+    ...(caseItem.case_type === "severe_incident" ? incidentSrpFields : vulnerabilitySrpFields),
+  ];
+  elements.srpFieldsGrid.innerHTML = fieldsForCase
     .map(([key, label, kind]) => {
       const control =
         kind === "textarea"
@@ -1334,15 +1372,46 @@ function renderSrpFields(caseItem) {
     .join("");
 }
 
+function updateSrpAssistanceControls() {
+  const row = state.currentCase;
+  if (!row) {
+    elements.downloadSrpPackageButton.disabled = true;
+    elements.openSrpPortalButton.disabled = true;
+    return;
+  }
+  const stage = elements.srpPackageStage.value;
+  const readiness = (row.srp_readiness || {})[stage] || {};
+  const profile = readiness.schema_profile || {};
+  elements.downloadSrpPackageButton.disabled = !readiness.ready;
+  elements.openSrpPortalButton.disabled = !(
+    readiness.portal_submission_ready && elements.srpHumanConfirmation.checked
+  );
+  const missingPrevious = readiness.missing_prerequisite_receipts || [];
+  if (missingPrevious.length) {
+    elements.srpPortalStatus.textContent = `须先登记前序官方回执：${missingPrevious.join(", ")}。可提前生成材料，但尚不可进入本阶段提交。`;
+  } else {
+    elements.srpPortalStatus.textContent = profile.portal_url
+      ? "将打开 ENISA 已配置的官方 SRP 入口；本工具不会代替您在门户点击 Submit。"
+      : "ENISA 尚未公布正式门户 URL；将打开官方 SRP 信息页。本工具不会代替您在门户点击 Submit。";
+  }
+}
+
 function renderArt14Case() {
   const row = state.currentCase;
   if (!row) return;
-  elements.caseDetailTitle.textContent = `${row.project_name} · ${row.cve_id || row.euvd_id || "无公开ID"}`;
-  elements.caseDetailSubtitle.textContent = `${row.component_name || "未标注组件"} ${row.component_version || ""} · 案件 ${row.id}`;
+  const isIncident = row.case_type === "severe_incident";
+  elements.caseDetailTitle.textContent = `${row.project_name} · ${isIncident ? "严重安全事件" : (row.cve_id || row.euvd_id || "无公开ID")}`;
+  elements.caseDetailSubtitle.textContent = `${isIncident ? "CRA Art.14(3)-(5)" : "CRA Art.14(1)-(2)"} · ${row.component_name || "未标注组件"} ${row.component_version || ""} · 案件 ${row.id}`;
   elements.caseApplicability.value = row.applicability_status;
   elements.caseApplicabilityReason.value = row.applicability_justification || "";
   elements.caseEvidenceStatus.value = row.exploitation_evidence_status;
   elements.caseEvidenceSummary.value = row.exploitation_evidence_summary || "";
+  const criteria = row.severe_incident_criteria || {};
+  elements.incidentDataFunctionImpact.checked = Boolean(criteria.availability_authenticity_integrity_confidentiality_impact);
+  elements.incidentMaliciousCode.checked = Boolean(criteria.malicious_code_introduction);
+  elements.incidentCriteriaRationale.value = criteria.rationale || "";
+  elements.severeIncidentCriteria.classList.toggle("hidden", !isIncident);
+  document.querySelectorAll(".vulnerability-only").forEach((item) => item.classList.toggle("hidden", isIncident));
   elements.caseRiskSummary.value = row.product_risk_summary || "";
   elements.caseMitigation.value = row.mitigation_summary || "";
   elements.caseInitialAssessment.value = toDateTimeLocal(row.initial_assessment_completed_at);
@@ -1355,7 +1424,7 @@ function renderArt14Case() {
   elements.caseDeadlineStrip.innerHTML = [
     ["24h最迟期限", deadlines.early_warning_24h],
     ["72h最迟期限", deadlines.notification_72h],
-    ["Final最迟期限", deadlines.final_report_14d],
+    [isIncident ? "Final最迟期限（72h提交后1个月）" : "Final最迟期限（措施可用后14日）", deadlines.final_report],
   ]
     .map(([label, item]) => {
       const tone = item?.status === "overdue" ? "danger" : item?.status === "open" ? "warning" : "";
@@ -1395,14 +1464,18 @@ function renderArt14Case() {
     })
     .join("");
   elements.caseExports.innerHTML = [
-    `<a href="/api/art14/cases/${row.id}/vex/cyclonedx">CycloneDX 1.7 VEX</a>`,
-    `<a href="/api/art14/cases/${row.id}/vex/csaf">CSAF 2.0 VEX</a>`,
+    ...(isIncident ? [] : [
+      `<a href="/api/art14/cases/${row.id}/vex/cyclonedx">CycloneDX 1.7 VEX</a>`,
+      `<a href="/api/art14/cases/${row.id}/vex/csaf">CSAF 2.0 VEX</a>`,
+    ]),
     ...["early-warning", "notification", "final-report"].flatMap((stage) =>
       ["json", "xlsx", "html"].map(
         (format) => `<a href="/api/art14/cases/${row.id}/srp/${stage}/export/${format}">${stage} ${format.toUpperCase()}</a>`,
       ),
     ),
   ].join("");
+  elements.srpHumanConfirmation.checked = false;
+  updateSrpAssistanceControls();
   renderReviewerOptions();
 }
 
@@ -1429,6 +1502,7 @@ async function createManualCase() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        case_type: elements.manualCaseType.value,
         project_name: elements.manualProductName.value.trim(),
         project_version: elements.manualProductVersion.value.trim(),
         component_name: elements.manualComponentName.value.trim(),
@@ -1451,15 +1525,26 @@ async function importVex() {
     showToast("请选择 VEX JSON 文件", "error");
     return;
   }
+  if (!elements.vexReceiptInput.files[0]) {
+    showToast("请选择与 VEX 字节绑定的 intake receipt JSON", "error");
+    return;
+  }
+  const issuerId = elements.vexIssuerId.value.trim();
+  if (!issuerId) {
+    showToast("请输入已由运维加入 allowlist 的签发者 ID", "error");
+    return;
+  }
   const form = new FormData();
   form.append("file", elements.vexFileInput.files[0]);
+  form.append("receipt", elements.vexReceiptInput.files[0]);
+  form.append("issuer_id", issuerId);
   form.append("actor", elements.vexActor.value.trim() || "local analyst");
   try {
     const result = await api("/api/vex/import", { method: "POST", body: form });
     elements.vexImportResult.textContent = `${result.format} · ${result.cases.length} 个案件 · SHA-256 ${result.source_sha256}`;
     await loadArt14Workspace(true);
     if (result.cases[0]) await openArt14Case(result.cases[0].id);
-    showToast("VEX 已导入");
+    showToast("VEX receipt 绑定验证通过并已导入");
   } catch (error) {
     showToast(error.message, "error");
   }
@@ -1498,6 +1583,11 @@ async function saveCaseAnalysis() {
           applicability_justification: elements.caseApplicabilityReason.value.trim(),
           exploitation_evidence_status: elements.caseEvidenceStatus.value,
           exploitation_evidence_summary: elements.caseEvidenceSummary.value.trim(),
+          severe_incident_criteria: {
+            availability_authenticity_integrity_confidentiality_impact: elements.incidentDataFunctionImpact.checked,
+            malicious_code_introduction: elements.incidentMaliciousCode.checked,
+            rationale: elements.incidentCriteriaRationale.value.trim(),
+          },
           product_risk_summary: elements.caseRiskSummary.value.trim(),
           mitigation_summary: elements.caseMitigation.value.trim(),
           initial_assessment_completed_at: toIsoOrNull(elements.caseInitialAssessment.value),
@@ -1601,10 +1691,52 @@ async function saveSrpFields() {
       body: JSON.stringify({ actor: "SRP draft editor", updates: { srp_fields } }),
     });
     renderArt14Case();
-    showToast("SRP Q16 草稿字段已保存");
+    showToast("SRP Q16 2026-08-03 字段草稿已保存；提交前请核对当前门户");
   } catch (error) {
     showToast(error.message, "error");
   }
+}
+
+function downloadSrpSubmissionPackage() {
+  if (!state.currentCase) return;
+  const stage = elements.srpPackageStage.value;
+  const readiness = (state.currentCase.srp_readiness || {})[stage] || {};
+  if (!readiness.ready) {
+    const missing = (readiness.missing_fields || []).join(", ") || "审批门未满足";
+    showToast(`完整上报包尚未就绪：${missing}`, "error");
+    return;
+  }
+  const url = `/api/art14/cases/${state.currentCase.id}/srp/${stage}/package.zip`;
+  window.location.assign(url);
+  showToast("正在生成完整辅助上报包；下载后请先逐项人工核对");
+}
+
+function openOfficialSrp() {
+  if (!state.currentCase) return;
+  const stage = elements.srpPackageStage.value;
+  const readiness = (state.currentCase.srp_readiness || {})[stage] || {};
+  if (!readiness.portal_submission_ready || !elements.srpHumanConfirmation.checked) {
+    const missingPrevious = readiness.missing_prerequisite_receipts || [];
+    showToast(
+      missingPrevious.length
+        ? `请先登记前序官方回执：${missingPrevious.join(", ")}`
+        : "请先完成本阶段材料并勾选人工确认",
+      "error",
+    );
+    return;
+  }
+  const profile = readiness.schema_profile || {};
+  const target = profile.portal_url || profile.srp_information_url;
+  if (!target) {
+    showToast("尚无 ENISA 官方 SRP 页面地址", "error");
+    return;
+  }
+  window.open(target, "_blank", "noopener,noreferrer");
+  showToast(
+    profile.portal_url
+      ? "已打开官方 SRP；请在门户内最终确认并点击 Submit"
+      : "正式门户 URL 尚未公布，已打开 ENISA SRP 官方信息页",
+  );
 }
 
 async function recordSubmission() {
@@ -1669,8 +1801,15 @@ function sleep(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+const SYNC_POLL_TIMEOUT_MS = 15 * 60 * 1000;
+
 async function pollSyncStatus() {
+  const startedAt = Date.now();
+  let sawRunning = false;
   while (true) {
+    if (Date.now() - startedAt > SYNC_POLL_TIMEOUT_MS) {
+      throw new Error("同步仍在后台进行（已等待 15 分钟）。请稍后在 Art.14 视图查看结果，或刷新页面。");
+    }
     let status;
     try {
       status = await api("/api/euvd/sync-status");
@@ -1683,12 +1822,20 @@ async function pollSyncStatus() {
     if (status.state === "failed") {
       throw new Error(status.error || "同步失败");
     }
+    if (status.state === "running") {
+      sawRunning = true;
+    } else if (sawRunning && status.state === "idle") {
+      // watch 守护在 run 结束后会把状态重置回 idle（completed 为瞬态）：
+      // 已观察到 running 后回到 idle，视为本次同步已结束。
+      return status;
+    }
     await sleep(1500);
   }
 }
 
-async function refreshFeeds() {
-  elements.refreshFeedsButton.disabled = true;
+async function refreshFeeds(buttonEl = elements.refreshFeedsButton) {
+  if (!buttonEl) return;
+  buttonEl.disabled = true;
   try {
     await api("/api/euvd/sync-request", { method: "POST" });
     showToast("已请求一键更新，等待编排器执行…", "info");
@@ -1707,7 +1854,7 @@ async function refreshFeeds() {
       /* ignore */
     }
   } finally {
-    elements.refreshFeedsButton.disabled = false;
+    buttonEl.disabled = false;
   }
 }
 
@@ -1739,12 +1886,26 @@ document.querySelectorAll("[data-catalog-filter]").forEach((button) => {
     state.vulnerabilityFilter = button.dataset.catalogFilter;
     document.querySelectorAll("[data-catalog-filter]").forEach((item) => {
       item.classList.toggle("active", item === button);
+      item.setAttribute("aria-pressed", String(item === button));
     });
     renderVulnerabilities();
   });
 });
 
 elements.fileInput.addEventListener("change", (event) => uploadFile(event.target.files[0]));
+[
+  [elements.dropZone, elements.fileInput],
+  [elements.receiptZone, elements.receiptInput],
+].forEach(
+  ([zone, input]) => {
+    zone.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        input.click();
+      }
+    });
+  },
+);
 elements.dropZone.addEventListener("dragover", (event) => {
   event.preventDefault();
   elements.dropZone.classList.add("dragging");
@@ -1779,6 +1940,7 @@ document.querySelectorAll("[data-detail-tab]").forEach((button) => {
     state.detailTab = button.dataset.detailTab;
     document.querySelectorAll("[data-detail-tab]").forEach((item) => {
       item.classList.toggle("active", item === button);
+      item.setAttribute("aria-pressed", String(item === button));
     });
     renderProjectDetail();
   });
@@ -1787,7 +1949,10 @@ document.querySelectorAll("[data-detail-tab]").forEach((button) => {
 elements.createManualCaseButton.addEventListener("click", createManualCase);
 elements.importVexButton.addEventListener("click", importVex);
 elements.createReviewerButton.addEventListener("click", createReviewer);
-elements.refreshFeedsButton.addEventListener("click", refreshFeeds);
+elements.refreshFeedsButton.addEventListener("click", () => refreshFeeds(elements.refreshFeedsButton));
+if (elements.dashboardRefreshEuvdButton) {
+  elements.dashboardRefreshEuvdButton.addEventListener("click", () => refreshFeeds(elements.dashboardRefreshEuvdButton));
+}
 elements.euvdCatalogSearch.addEventListener("input", onEuvdCatalogSearchInput);
 elements.euvdCatalogSort.addEventListener("change", () => {
   state.euvdCatalog.sort = elements.euvdCatalogSort.value;
@@ -1822,6 +1987,13 @@ elements.addEvidenceButton.addEventListener("click", addCaseEvidence);
 elements.confirmAwarenessButton.addEventListener("click", confirmCaseAwareness);
 elements.recordReviewButton.addEventListener("click", recordCaseReview);
 elements.saveSrpFieldsButton.addEventListener("click", saveSrpFields);
+elements.downloadSrpPackageButton.addEventListener("click", downloadSrpSubmissionPackage);
+elements.srpPackageStage.addEventListener("change", () => {
+  elements.srpHumanConfirmation.checked = false;
+  updateSrpAssistanceControls();
+});
+elements.srpHumanConfirmation.addEventListener("change", updateSrpAssistanceControls);
+elements.openSrpPortalButton.addEventListener("click", openOfficialSrp);
 elements.recordSubmissionButton.addEventListener("click", recordSubmission);
 elements.reviewStage.addEventListener("change", () => {
   const role = elements.reviewStage.value;

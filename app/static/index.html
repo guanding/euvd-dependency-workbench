@@ -17,11 +17,11 @@
         </div>
       </div>
       <div class="header-actions">
-        <a class="icon-text-button header-button" href="/api/template">
+        <a class="icon-text-button header-button" href="/api/template" aria-label="下载 SBOM 模板">
           <i data-lucide="file-spreadsheet" aria-hidden="true"></i>
           <span>模板</span>
         </a>
-        <button id="headerImportButton" class="icon-text-button primary" type="button">
+        <button id="headerImportButton" class="icon-text-button primary" type="button" aria-label="导入 SBOM">
           <i data-lucide="upload" aria-hidden="true"></i>
           <span>导入 SBOM</span>
         </button>
@@ -88,10 +88,16 @@
               <h1>风险看板</h1>
               <p id="dashboardTimestamp">正在汇总项目数据</p>
             </div>
-            <button class="icon-text-button primary view-import-button" type="button">
-              <i data-lucide="plus" aria-hidden="true"></i>
-              新建项目版本
-            </button>
+            <div class="heading-actions">
+              <button id="dashboardRefreshEuvdButton" class="icon-text-button" type="button" title="一键更新 EUVD：请求编排器执行 增量同步 + KEV/CVE 刷新 + 消费者快照重建。需 mirror_ops.py watch 守护进程运行（约束：Web 只发请求，不直接同步）">
+                <i data-lucide="refresh-cw" aria-hidden="true"></i>
+                一键更新 EUVD
+              </button>
+              <button class="icon-text-button primary view-import-button" type="button">
+                <i data-lucide="plus" aria-hidden="true"></i>
+                新建项目版本
+              </button>
+            </div>
           </div>
 
           <div id="dashboardMetrics" class="metrics metrics-six"></div>
@@ -232,10 +238,10 @@
             </div>
           </div>
           <div class="list-toolbar toolbar-wrap">
-            <div class="segmented" role="tablist" aria-label="漏洞筛选">
-              <button class="segment active" data-catalog-filter="all" type="button">全部</button>
-              <button class="segment" data-catalog-filter="已匹配" type="button">EUVD记录</button>
-              <button class="segment" data-catalog-filter="需复核" type="button">需复核</button>
+            <div class="segmented" role="group" aria-label="漏洞筛选">
+              <button class="segment active" data-catalog-filter="all" type="button" aria-pressed="true">全部</button>
+              <button class="segment" data-catalog-filter="已匹配" type="button" aria-pressed="false">EUVD记录</button>
+              <button class="segment" data-catalog-filter="需复核" type="button" aria-pressed="false">需复核</button>
             </div>
             <label class="search-box">
               <i data-lucide="search" aria-hidden="true"></i>
@@ -317,7 +323,7 @@
           <div class="page-heading">
             <div>
               <h1>CRA Art.14 案件</h1>
-              <p>公开信号、产品适用性、积极利用证据和最终报告决定彼此分离</p>
+              <p>积极利用漏洞与严重安全事件共用受控案件流，但分别计算触发准则、字段和最终期限</p>
             </div>
             <button id="refreshFeedsButton" class="icon-text-button" type="button" title="一键更新 EUVD：请求编排器执行 增量同步 + KEV/CVE 刷新 + 消费者快照重建。需 mirror_ops.py watch 守护进程运行（约束：Web 只发请求，不直接同步）">
               <i data-lucide="refresh-cw" aria-hidden="true"></i>
@@ -327,30 +333,38 @@
 
           <div class="compliance-notice">
             <strong>人工决定边界</strong>
-            <span>KEV/EUVD 命中不会自动触发报告；未命中也不是“不需报告”。awareness 只能由授权人员基于初评和证据确认。</span>
+            <span>KEV/EUVD 命中不会自动触发报告；严重事件也必须人工确认 Art.14(5) 准则。awareness 只能由授权人员基于初评和证据确认。</span>
           </div>
           <div id="feedSnapshotStatus" class="status-strip"></div>
 
           <div class="case-tools-grid">
             <section class="work-panel compact-panel">
-              <div class="panel-heading"><div><h2>建立零日/人工案件</h2><p>CVE/EUVD ID 可留空</p></div></div>
+              <div class="panel-heading"><div><h2>建立人工案件</h2><p>支持积极利用漏洞或严重安全事件；CVE/EUVD ID 可留空</p></div></div>
               <div class="metadata-grid">
+                <label class="field"><span>案件类型 *</span>
+                  <select id="manualCaseType">
+                    <option value="actively_exploited_vulnerability">积极利用漏洞（Art.14(1)-(2)）</option>
+                    <option value="severe_incident">严重安全事件（Art.14(3)-(5)）</option>
+                  </select>
+                </label>
                 <label class="field"><span>产品名称 *</span><input id="manualProductName" type="text" /></label>
                 <label class="field"><span>产品版本</span><input id="manualProductVersion" type="text" /></label>
                 <label class="field"><span>组件</span><input id="manualComponentName" type="text" /></label>
                 <label class="field"><span>CVE</span><input id="manualCveId" type="text" placeholder="可选" /></label>
                 <label class="field"><span>EUVD ID</span><input id="manualEuvdId" type="text" placeholder="可选" /></label>
-                <label class="field field-wide"><span>漏洞/信号摘要</span><textarea id="manualSummary" rows="3"></textarea></label>
+                <label class="field field-wide"><span>漏洞/事件/信号摘要</span><textarea id="manualSummary" rows="3"></textarea></label>
               </div>
               <button id="createManualCaseButton" class="icon-text-button primary" type="button">建立案件</button>
             </section>
 
             <section class="work-panel compact-panel">
-              <div class="panel-heading"><div><h2>导入 VEX</h2><p>CycloneDX 1.7 或 CSAF 2.0 VEX JSON</p></div></div>
+              <div class="panel-heading"><div><h2>实验性 VEX intake</h2><p>默认 fail-closed；仅接受与受信 Workbench receipt 绑定的 VEX</p></div></div>
               <label class="field"><span>VEX 文件</span><input id="vexFileInput" type="file" accept=".json" /></label>
+              <label class="field"><span>Intake receipt</span><input id="vexReceiptInput" type="file" accept=".json" /></label>
+              <label class="field"><span>签发者 ID</span><input id="vexIssuerId" type="text" autocomplete="off" placeholder="须由运维加入 allowlist" /></label>
               <label class="field"><span>记录人</span><input id="vexActor" type="text" value="local analyst" /></label>
-              <button id="importVexButton" class="icon-text-button primary" type="button">导入并建立案件</button>
-              <div id="vexImportResult" class="muted"></div>
+              <button id="importVexButton" class="icon-text-button primary" type="button">验证 receipt 并导入</button>
+              <div id="vexImportResult" class="muted">默认注册表没有已准入签发者；裸 VEX、未知签发者或哈希不一致均会被拒绝。本工具不在此端点重新执行 cosign 验签。</div>
             </section>
 
             <section class="work-panel compact-panel">
@@ -403,7 +417,7 @@
                   </select>
                 </label>
                 <label class="field"><span>适用性技术理由</span><textarea id="caseApplicabilityReason" rows="4"></textarea></label>
-                <label class="field"><span>积极利用证据状态</span>
+                <label class="field vulnerability-only"><span>积极利用证据状态</span>
                   <select id="caseEvidenceStatus">
                     <option value="not_assessed">not_assessed</option>
                     <option value="reliable_evidence">reliable_evidence</option>
@@ -411,30 +425,38 @@
                     <option value="no_evidence_found">no_evidence_found</option>
                   </select>
                 </label>
-                <label class="field"><span>利用证据摘要</span><textarea id="caseEvidenceSummary" rows="3"></textarea></label>
+                <label class="field vulnerability-only"><span>利用证据摘要</span><textarea id="caseEvidenceSummary" rows="3"></textarea></label>
+                <div id="severeIncidentCriteria" class="field field-wide hidden">
+                  <span>CRA Art.14(5) 严重事件准则</span>
+                  <div class="checkbox-grid">
+                    <label><input id="incidentDataFunctionImpact" type="checkbox" /> 已影响或可能影响敏感/重要数据或功能的可用性、真实性、完整性或机密性</label>
+                    <label><input id="incidentMaliciousCode" type="checkbox" /> 已导致或可能导致产品或用户网络引入/执行恶意代码</label>
+                  </div>
+                  <label class="field"><span>准则判断理由 *</span><textarea id="incidentCriteriaRationale" rows="4"></textarea></label>
+                </div>
                 <label class="field"><span>产品风险分析</span><textarea id="caseRiskSummary" rows="3"></textarea></label>
                 <label class="field"><span>缓解/修正措施</span><textarea id="caseMitigation" rows="3"></textarea></label>
                 <label class="field"><span>初步评估完成时间</span><input id="caseInitialAssessment" type="datetime-local" /></label>
-                <label class="field"><span>修正措施可用时间</span><input id="caseCorrectiveAt" type="datetime-local" /></label>
+                <label class="field vulnerability-only"><span>修正措施可用时间</span><input id="caseCorrectiveAt" type="datetime-local" /></label>
                 <label class="field"><span>下一复核时间</span><input id="caseNextReview" type="datetime-local" /></label>
                 <label class="field"><span>记录人</span><input id="caseUpdateActor" type="text" value="local analyst" /></label>
                 <button id="saveCaseAnalysisButton" class="icon-text-button primary" type="button">保存分析</button>
               </section>
 
               <section class="work-panel compact-panel">
-                <h3>2. 结构化积极利用证据</h3>
+                <h3>2. 结构化产品级证据</h3>
                 <label class="field"><span>来源类型</span><input id="evidenceSourceType" type="text" placeholder="CSIRT / telemetry / threat intelligence" /></label>
                 <label class="field"><span>来源编号或文件</span><input id="evidenceSourceRef" type="text" /></label>
                 <label class="field"><span>来源 URL</span><input id="evidenceSourceUrl" type="url" /></label>
                 <label class="field"><span>响应/文件 SHA-256</span><input id="evidenceSha256" type="text" maxlength="64" /></label>
                 <label class="field"><span>证据描述 *</span><textarea id="evidenceDescription" rows="3"></textarea></label>
                 <label class="field"><span>与具体产品的关系</span><textarea id="evidenceProductRelevance" rows="3"></textarea></label>
-                <label class="field"><span>可靠性结论</span>
+                <label class="field vulnerability-only"><span>积极利用可靠性结论</span>
                   <select id="evidenceReliable">
                     <option value="unknown">unknown</option><option value="yes">yes</option><option value="no">no</option>
                   </select>
                 </label>
-                <div class="checkbox-grid">
+                <div class="checkbox-grid vulnerability-only">
                   <label><input id="evidenceMaliciousActor" type="checkbox" /> 已确认恶意行为者</label>
                   <label><input id="evidenceWithoutPermission" type="checkbox" /> 未经系统所有者许可</label>
                   <label><input id="evidenceActualExploit" type="checkbox" /> 已确认实际利用</label>
@@ -476,11 +498,27 @@
               </section>
 
               <section class="work-panel compact-panel field-wide">
-                <h3>5. ENISA SRP Q16 草稿字段</h3>
+                <h3>5. ENISA SRP 辅助上报</h3>
+                <p class="muted">字段配置绑定 ENISA FAQ Q16（2026-08-03）及界面指引（2026-08-14）；正式门户仍可能更新，提交前必须逐项确认。</p>
                 <div id="srpFieldsGrid" class="metadata-grid"></div>
                 <button id="saveSrpFieldsButton" class="icon-text-button primary" type="button">保存 SRP 草稿字段</button>
                 <div id="srpReadinessPanel" class="status-strip"></div>
                 <div id="caseExports" class="export-links"></div>
+                <div class="metadata-grid srp-assistance-controls">
+                  <label class="field"><span>生成包阶段</span>
+                    <select id="srpPackageStage"><option value="early-warning">24h early warning</option><option value="notification">72h notification</option><option value="final-report">Final report</option></select>
+                  </label>
+                  <div class="field field-wide">
+                    <span>完整辅助上报包</span>
+                    <button id="downloadSrpPackageButton" class="icon-text-button primary" type="button">生成完整上报包 ZIP</button>
+                  </div>
+                  <label class="field field-wide checkbox-label"><input id="srpHumanConfirmation" type="checkbox" /> <span>我已将生成内容与当前官方 SRP 表单逐项核对，并确认分类、期限、敏感性、成员国范围及复制字段无误。</span></label>
+                  <div class="field field-wide">
+                    <span>官方提交</span>
+                    <button id="openSrpPortalButton" class="icon-text-button" type="button" disabled>人工确认并打开 ENISA SRP 官方页面</button>
+                    <small id="srpPortalStatus" class="muted">本按钮不会代替您在官方门户点击 Submit；正式门户 URL 发布前将打开 ENISA SRP 信息页。</small>
+                  </div>
+                </div>
               </section>
 
               <section class="work-panel compact-panel">
@@ -519,11 +557,11 @@
             </label>
             <label class="field">
               <span>项目版本</span>
-              <input id="projectVersion" type="text" maxlength="80" placeholder="例如：2.3.1" />
+              <input id="projectVersion" type="text" maxlength="80" placeholder="例如：2.4.0-rc.1" />
             </label>
             <label class="field">
               <span>软件 Build / 固件构建</span>
-              <input id="softwareBuild" type="text" maxlength="160" placeholder="例如：GW-2.3.1+20260804" />
+              <input id="softwareBuild" type="text" maxlength="160" placeholder="例如：GW-2.4.0-rc.1+build.1" />
             </label>
             <label class="field">
               <span>客户</span>
@@ -531,14 +569,14 @@
             </label>
           </div>
 
-          <label id="dropZone" class="drop-zone" for="fileInput">
+          <label id="dropZone" class="drop-zone" for="fileInput" role="button" tabindex="0">
             <input id="fileInput" type="file" accept=".xlsx,.xlsm,.csv,.tsv,.json" hidden />
             <span class="drop-icon"><i data-lucide="upload-cloud" aria-hidden="true"></i></span>
             <strong>选择 SBOM 文件</strong>
             <span>Excel、CSV、TSV 或 CycloneDX JSON，最大 20 MB</span>
           </label>
 
-          <label id="receiptZone" class="drop-zone drop-zone-secondary" for="receiptInput">
+          <label id="receiptZone" class="drop-zone drop-zone-secondary" for="receiptInput" role="button" tabindex="0">
             <input id="receiptInput" type="file" accept=".json" hidden />
             <span class="drop-icon"><i data-lucide="file-key" aria-hidden="true"></i></span>
             <strong>附加 SBOM Workbench receipt.json（可选）</strong>
@@ -597,14 +635,14 @@
                 <i data-lucide="download" aria-hidden="true"></i>
                 下载报告
               </a>
-              <a id="downloadEvidenceButton" class="icon-text-button hidden" href="#" title="导出 CRA 合规证据包（manifest + evidence.json + evidence.xlsx + 审计链）">
+              <a id="downloadEvidenceButton" class="icon-text-button hidden" href="#" title="导出 CRA 评估支持证据包（非符合性结论；manifest + evidence.json + evidence.xlsx + 审计链）">
                 <i data-lucide="package" aria-hidden="true"></i>
                 证据包
               </a>
             </div>
           </div>
 
-          <div id="progressPanel" class="progress-panel hidden">
+          <div id="progressPanel" class="progress-panel hidden" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-labelledby="progressStage">
             <div class="progress-header">
               <strong id="progressStage">准备查询 EUVD</strong>
               <span id="progressPercent">0%</span>
@@ -632,14 +670,14 @@
             <div id="projectQuality" class="quality-inline"></div>
           </section>
 
-          <div class="detail-tabs" role="tablist" aria-label="项目详情">
-            <button class="detail-tab active" data-detail-tab="vulnerabilities" type="button">
+          <div class="detail-tabs" role="group" aria-label="项目详情筛选">
+            <button class="detail-tab active" data-detail-tab="vulnerabilities" type="button" aria-pressed="true">
               漏洞
             </button>
-            <button class="detail-tab" data-detail-tab="components" type="button">
+            <button class="detail-tab" data-detail-tab="components" type="button" aria-pressed="false">
               组件
             </button>
-            <button class="detail-tab" data-detail-tab="errors" type="button">
+            <button class="detail-tab" data-detail-tab="errors" type="button" aria-pressed="false">
               查询错误
             </button>
           </div>

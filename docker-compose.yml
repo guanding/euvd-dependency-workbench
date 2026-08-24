@@ -4,9 +4,9 @@ services:
   matcher:
     build:
       context: .
-    # 版本号单一源 = app/main.py 的 APP_VERSION。tag 必须与之一致；
+    # 版本号单一源 = app/version.py 的 APP_VERSION。tag 必须与之一致；
     # 发布前用 `python scripts/check_version_consistency.py` 校验。
-    image: euvd-dependency-workbench:2.3.1
+    image: euvd-dependency-workbench:2.4.0-rc.1
     restart: unless-stopped
     init: true
     environment:
@@ -24,8 +24,10 @@ services:
     volumes:
       - "${MATCHER_DATA_PATH:-./data}:/app/data"
       - "${MATCHER_OUTPUT_PATH:-./outputs}:/app/outputs"
-      - "${MATCHER_DATA_PATH:-./data}/euvd-readonly.sqlite3:/app/euvd/euvd-readonly.sqlite3:ro"
-      - "${MATCHER_DATA_PATH:-./data}/euvd-readonly.sqlite3.sha256:/app/euvd/euvd-readonly.sqlite3.sha256:ro"
+      # 目录挂载（ro）：快照经 os.replace 原子替换后，容器内路径解析跟随
+      # 宿主目录，无需 force-recreate 即可读到新快照；单文件挂载会绑定旧
+      # inode，替换后挂载点悬空触发 503 fail-closed。
+      - "${MATCHER_DATA_PATH:-./data}/euvd:/app/euvd:ro"
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
