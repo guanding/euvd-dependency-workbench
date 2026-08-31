@@ -14,7 +14,7 @@ RUN python -m pip install --require-hashes --requirement requirements.lock --tar
         /opt/runtime-outputs /opt/runtime-euvd \
     && python ./scripts/bootstrap_demo_snapshot.py --output-dir /opt/runtime-euvd
 
-FROM cgr.dev/chainguard/python:latest@sha256:b3d3fbb8b9fe48950bab73d49bffa7496ff6f8a46ba570b302fc366f1396011a
+FROM cgr.dev/chainguard/python:latest@sha256:f487e51ca6ee4b20e07e1b4c9c44d3108ab305d2318b0f233f5b72529f52a6aa
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
